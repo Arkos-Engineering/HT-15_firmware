@@ -202,11 +202,15 @@ static void print_key_states(){
     } 
 }
 
-static void spi1_select(spi1_device device){
-    while(spi_is_busy(spi1)) sleep_us(1);
-    gpio_put(pin_display_cs, device == spi1_device_display);
-    gpio_put(pin_flash_cs,   device == spi1_device_flash);
-    gpio_put(pin_sd_cs,      device == spi1_device_sd);
+static void spi1_select(spi1_select_t select){
+    // while(spi_is_busy(spi1)) sleep_us(1);
+    // gpio_put(pin_display_cs, device == spi1_device_display);
+    // gpio_put(pin_flash_cs,   device == spi1_device_flash);
+    // gpio_put(pin_sd_cs,      device == spi1_device_sd);
+    while(spi_is_busy(spi1)){asm volatile("nop");} //wait for any ongoing SPI transactions to finish
+    gpio_put(pin_display_cs, 1 & select);
+    gpio_put(pin_sd_cs,1 & (select >> 1));
+    gpio_put(pin_flash_cs, 1 & (select >> 2));
 }
 
 static void sd_init(){
@@ -250,7 +254,7 @@ static void display_init(){
     ssd1681_config_t display_config;
     ssd1681_get_default_config_3wire(&display_config);
     display_config.spi_port = 1;
-    display_config.spi_baudrate = 4000000; //10 MHz for some reason.
+    display_config.spi_baudrate = 4 * MHZ; //10 MHz for some reason.
     display_config.spi_mode = SSD1681_SPI_3WIRE;
     display_config.pin_mosi = pin_spi1_sdi;
     display_config.pin_sck = pin_spi1_clk;
@@ -462,29 +466,25 @@ HT15_EXPORT bool8 ht15_initalize(void){
     gpio_set_dir(pin_flash_cs, GPIO_OUT);
     spi1_select(spi1_device_none);
 
-    spi_init(spi1, 8 * MHZ); //8MHz is 20 MHz measured for some reason
-    spi_set_format(spi1, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
-    gpio_set_function(pin_spi1_sdi, GPIO_FUNC_SPI);
-    gpio_set_function(pin_spi1_sdo, GPIO_FUNC_SPI);
-    gpio_set_function(pin_spi1_clk, GPIO_FUNC_SPI);
+    // spi_init(spi1, 8 * MHZ); //8MHz is 20 MHz measured for some reason
+    // spi_set_format(spi1, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
+    // gpio_set_function(pin_spi1_sdi, GPIO_FUNC_SPI);
+    // gpio_set_function(pin_spi1_sdo, GPIO_FUNC_SPI);
+    // gpio_set_function(pin_spi1_clk, GPIO_FUNC_SPI);
     
+    /*TODO: all display stuff goes on another thread*/
+    printf("initalize display\n");
+    display_init();
     printf("initalize audio\n");
     audio_init();
 
-    printf("initalize sd\n");
+    // printf("initalize sd\n");
     /* SD card needs to init before anything else because it starts in SD mode and needs to be switched to SPI mode before the display can be used, which shares the same SPI bus */
-    sd_init();
-    spi1_select(spi1_device_none);
-
-    /*TODO: all display stuff goes on another thread*/
-    display_init();
-    spi1_select(spi1_device_none);
+    // sd_init();
 
 
     adc_init();
     adc_gpio_init(pin_v_bat);
-
-    adc_init();
     adc_gpio_init(pin_pot_volume);
 
     return 1;
@@ -527,14 +527,14 @@ HT15_EXPORT bool8 ht15_run(void){
             int writen = snprintf(volume_string, 69, "%"PRIu8"<|", current_volume);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 100, 10, volume_string, writen, 1, SSD1681_FONT_8);
 
-            spi1_select(spi1_device_display);
+            // spi1_select(spi1_device_display);
             if(should_clean_display){
                 ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL);
                 should_clean_display = 0;
             } else {
                 ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
             }
-            spi1_select(spi1_device_none);
+            // spi1_select(spi1_device_none);
         }
 
         gpio_put(pin_led_status, led_status_value);
