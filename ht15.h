@@ -456,15 +456,13 @@ HT15_EXPORT bool8 ht15_initalize(void){
     gpio_set_function(pin_i2c1_scl, GPIO_FUNC_I2C);
     i2c_init(i2c1, 100 * KHZ);
 
-    // audio_init();
-
     gpio_init(pin_display_cs);
     gpio_set_dir(pin_display_cs, GPIO_OUT);
     gpio_init(pin_sd_cs);
     gpio_set_dir(pin_sd_cs, GPIO_OUT);
     gpio_init(pin_flash_cs);
     gpio_set_dir(pin_flash_cs, GPIO_OUT);
-    spi1_select(spi1_device_none);
+    spi1_select(spi1_select_none);
 
     // spi_init(spi1, 8 * MHZ); //8MHz is 20 MHz measured for some reason
     // spi_set_format(spi1, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
@@ -517,15 +515,17 @@ HT15_EXPORT bool8 ht15_run(void){
 
 
         if(!(cycle & 511)){
+        // if(cycle % 100 == 0){
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
+            // printf("%s\n", voltage_string);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 50, "HT-15", 5, 1, SSD1681_FONT_24);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, "HT-15", 5, 1, SSD1681_FONT_12);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
 
-            char volume_string[69];
-            int writen = snprintf(volume_string, 69, "%"PRIu8"<|", current_volume);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 100, 10, volume_string, writen, 1, SSD1681_FONT_8);
+            char volume_string[10];
+            int writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 20, volume_string, writen, 1, SSD1681_FONT_8);
 
             // spi1_select(spi1_device_display);
             if(should_clean_display){
