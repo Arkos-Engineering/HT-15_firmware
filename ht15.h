@@ -202,15 +202,11 @@ static void print_key_states(){
     } 
 }
 
-static void spi1_select(spi1_select_t select){
-    // while(spi_is_busy(spi1)) sleep_us(1);
-    // gpio_put(pin_display_cs, device == spi1_device_display);
-    // gpio_put(pin_flash_cs,   device == spi1_device_flash);
-    // gpio_put(pin_sd_cs,      device == spi1_device_sd);
+static void spi1_select(spi1_device device){
     while(spi_is_busy(spi1)){asm volatile("nop");} //wait for any ongoing SPI transactions to finish
-    gpio_put(pin_display_cs, 1 & select);
-    gpio_put(pin_sd_cs,1 & (select >> 1));
-    gpio_put(pin_flash_cs, 1 & (select >> 2));
+    gpio_put(pin_display_cs, !(device == spi1_device_display));
+    gpio_put(pin_flash_cs,   !(device == spi1_device_flash));
+    gpio_put(pin_sd_cs,      !(device == spi1_device_sd));
 }
 
 static void sd_init(){

@@ -158,12 +158,4 @@ typedef enum {
     spi1_device_flash,
 } spi1_device;
 
-// This is a bitmask 
-typedef enum {
-    spi1_select_none = 0b111,
-    spi1_select_display = 0b110,
-    spi_select_sd = 0b101,
-    spi_select_flash = 0b011
-}spi1_select_t;
-
 #endif /*HT15_DEFINITIONS*/
