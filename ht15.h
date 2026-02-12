@@ -414,7 +414,7 @@ static void audio_init(){
 }
 
 HT15_EXPORT bool8 ht15_initalize(void){
-    set_sys_clock_48mhz();
+    set_sys_clock_khz(150000, true);
 
     gpio_init(pin_led_status);
     gpio_set_dir(pin_led_status, GPIO_OUT);
