@@ -250,7 +250,7 @@ static void display_init(){
     ssd1681_config_t display_config;
     ssd1681_get_default_config_3wire(&display_config);
     display_config.spi_port = 1;
-    display_config.spi_baudrate = 4 * MHZ; //10 MHz for some reason.
+    display_config.spi_baudrate = 8 * MHZ;
     display_config.spi_mode = SSD1681_SPI_3WIRE;
     display_config.pin_mosi = pin_spi1_sdi;
     display_config.pin_sck = pin_spi1_clk;
@@ -410,7 +410,7 @@ static void audio_init(){
 }
 
 HT15_EXPORT bool8 ht15_initalize(void){
-    set_sys_clock_khz(150000, true);
+    // set_sys_clock_khz(150000, true);
 
     gpio_init(pin_led_status);
     gpio_set_dir(pin_led_status, GPIO_OUT);
@@ -452,13 +452,13 @@ HT15_EXPORT bool8 ht15_initalize(void){
     gpio_set_function(pin_i2c1_scl, GPIO_FUNC_I2C);
     i2c_init(i2c1, 100 * KHZ);
 
-    gpio_init(pin_display_cs);
-    gpio_set_dir(pin_display_cs, GPIO_OUT);
-    gpio_init(pin_sd_cs);
-    gpio_set_dir(pin_sd_cs, GPIO_OUT);
-    gpio_init(pin_flash_cs);
-    gpio_set_dir(pin_flash_cs, GPIO_OUT);
-    spi1_select(spi1_select_none);
+    // gpio_init(pin_display_cs);
+    // gpio_set_dir(pin_display_cs, GPIO_OUT);
+    // gpio_init(pin_sd_cs);
+    // gpio_set_dir(pin_sd_cs, GPIO_OUT);
+    // gpio_init(pin_flash_cs);
+    // gpio_set_dir(pin_flash_cs, GPIO_OUT);
+    // spi1_select(spi1_device_none); /* deselect all devices on spi1 bus */
 
     // spi_init(spi1, 8 * MHZ); //8MHz is 20 MHz measured for some reason
     // spi_set_format(spi1, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
@@ -510,7 +510,7 @@ HT15_EXPORT bool8 ht15_run(void){
         } else if((cycle & 0b11111) == 0b11111) led_status_value = !led_status_value;
 
 
-        if(!(cycle & 511)){
+        if(!(cycle & 15)){
         // if(cycle % 100 == 0){
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
@@ -521,7 +521,7 @@ HT15_EXPORT bool8 ht15_run(void){
 
             char volume_string[10];
             int writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 20, volume_string, writen, 1, SSD1681_FONT_8);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 170, 10, volume_string, writen, 1, SSD1681_FONT_8);
 
             // spi1_select(spi1_device_display);
             if(should_clean_display){
