@@ -521,7 +521,7 @@ HT15_EXPORT bool8 ht15_run(void){
 
             char volume_string[10];
             int writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 170, 10, volume_string, writen, 1, SSD1681_FONT_8);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, writen, 1, SSD1681_FONT_8);
 
             if(should_clean_display){
                 ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL);
