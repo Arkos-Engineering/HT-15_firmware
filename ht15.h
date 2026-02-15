@@ -487,6 +487,7 @@ HT15_EXPORT bool8 ht15_initalize(void){
 HT15_EXPORT bool8 ht15_run(void){
     u32 cycle = 0;
     bool8 should_clean_display = 1;
+    u8 selected_channel = 1;
     while(1){
         poll_input();
 
@@ -509,14 +510,28 @@ HT15_EXPORT bool8 ht15_run(void){
             audio_beep(4000, 20, calculate_volume(current_volume));
         } else if((cycle & 0b11111) == 0b11111) led_status_value = !led_status_value;
 
+        encoder_state=((encoder_state<<1) | gpio_get(pin_encoder_a)) & 0b111;//store the last three states of the encoder A pin
+        if(encoder_state==0b10){
+            if(gpio_get(pin_encoder_b)){
+                printf("Channel +\n");
+                selected_channel++;
+            } else{
+                printf("Channel -\n");
+                selected_channel--;
+            }
+            // encoder_state=0;
+        }
+
 
         if(!(cycle & 31)){
         // if(cycle % 100 == 0){
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
-            // printf("%s\n", voltage_string);
+            char channel_string[10];
+            snprintf(channel_string, 10, "CH %d", selected_channel);
+            printf("%s\n", channel_string);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 50, "HT-15", 5, 1, SSD1681_FONT_24);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, "HT-15", 5, 1, SSD1681_FONT_12);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 6, 1, SSD1681_FONT_12);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
 
             char volume_string[10];
