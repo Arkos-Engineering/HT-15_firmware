@@ -266,14 +266,14 @@ static void display_init(){
         printf("Display initialized successfully!\n");
     }
 
-    sleep_ms(100);
-    ssd1681_clear(SSD1681_COLOR_BLACK);
-    ssd1681_write_buffer(SSD1681_COLOR_BLACK);
-    ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
+    // sleep_ms(100);
+    // ssd1681_clear(SSD1681_COLOR_BLACK);
+    // ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+    // ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
 
-    ssd1681_clear(SSD1681_COLOR_BLACK);
-    ssd1681_write_buffer(SSD1681_COLOR_BLACK);
-    ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
+    // ssd1681_clear(SSD1681_COLOR_BLACK);
+    // ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+    // ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
 }
 
 static void audio_amp_reset_hard(){
@@ -524,8 +524,7 @@ HT15_EXPORT bool8 ht15_run(void){
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, writen, 1, SSD1681_FONT_8);
 
             if(should_clean_display){
-                ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL);
-                should_clean_display = 0;
+                should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
             } else {
                 ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
             }

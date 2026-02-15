@@ -679,7 +679,7 @@ int ssd1681_set_soft_start(ssd1681_softstart_drive_strength_t strength,  ssd1681
 
 /**
  * @brief Update the display if display is ready
- * @return 0 on update, -1 if display is busy, -2 if invalid update type
+ * @return 1 on update, 0 if display is busy, -2 if invalid update type
  * @param update_type Update type (see ssd1681_update_type_t in header file)
  */
 int ssd1681_write_buffer_and_update_if_ready(uint8_t update_type)
@@ -687,7 +687,7 @@ int ssd1681_write_buffer_and_update_if_ready(uint8_t update_type)
     if (!g_ssd1681.initialized) return -1;
 
     if (gpio_get(g_ssd1681.config.pin_busy)) {
-        return -1; // Display is busy
+        return 0; // Display is busy
     }
 
 
@@ -754,7 +754,7 @@ int ssd1681_write_buffer_and_update_if_ready(uint8_t update_type)
     } else {
         return -2; // Invalid update type
     }
-    return 0;
+    return 1;
 }
 
 
