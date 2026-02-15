@@ -271,9 +271,9 @@ static void display_init(){
     // ssd1681_write_buffer(SSD1681_COLOR_BLACK);
     // ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
 
-    // ssd1681_clear(SSD1681_COLOR_BLACK);
-    // ssd1681_write_buffer(SSD1681_COLOR_BLACK);
-    // ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
+    ssd1681_clear(SSD1681_COLOR_BLACK);
+    ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+    ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
 }
 
 static void audio_amp_reset_hard(){
