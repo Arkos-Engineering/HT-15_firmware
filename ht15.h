@@ -250,7 +250,7 @@ static void display_init(){
     ssd1681_config_t display_config;
     ssd1681_get_default_config_3wire(&display_config);
     display_config.spi_port = 1;
-    display_config.spi_baudrate = 20 * MHZ;
+    display_config.spi_baudrate = 10 * MHZ;
     display_config.spi_mode = SSD1681_SPI_3WIRE;
     display_config.pin_mosi = pin_spi1_sdi;
     display_config.pin_sck = pin_spi1_clk;
@@ -410,7 +410,8 @@ static void audio_init(){
 }
 
 HT15_EXPORT bool8 ht15_initalize(void){
-    // set_sys_clock_khz(125000, true);
+    // set_sys_clock_khz(120000, true);
+    // set_sys
 
     gpio_init(pin_led_status);
     gpio_set_dir(pin_led_status, GPIO_OUT);
