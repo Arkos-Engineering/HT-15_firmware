@@ -469,9 +469,6 @@ void ssd1681_get_default_config_3wire(ssd1681_config_t *config)
 }
 
 static void ssd1681_set_spi_mode_and_clk(ssd1681_config_t *config) {
-    if(spi_get_baudrate(g_ssd1681.spi) != config->spi_baudrate){
-        spi_set_baudrate(g_ssd1681.spi, config->spi_baudrate);
-    }
 
     if (config->spi_mode == SSD1681_SPI_3WIRE) {
         /* Configure for 9-bit frames */
@@ -493,6 +490,10 @@ static void ssd1681_set_spi_mode_and_clk(ssd1681_config_t *config) {
         /* Standard 8-bit SPI */
         spi_set_format(g_ssd1681.spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
     }
+
+    // if(spi_get_baudrate(g_ssd1681.spi) != config->spi_baudrate){
+    //     spi_set_baudrate(g_ssd1681.spi, config->spi_baudrate);
+    // }
 }
 
 /**
