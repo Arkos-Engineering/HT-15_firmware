@@ -308,13 +308,14 @@ static void ssd1681_spi_write_byte(uint8_t data)
         uint16_t frame = ((uint16_t)g_ssd1681.dc_state << 8) | data;
         
         /* Wait for TX FIFO space */
-        while (!spi_is_writable(g_ssd1681.spi)) tight_loop_contents();
+        // while (!spi_is_writable(g_ssd1681.spi)) tight_loop_contents();
         
         /* Write 9-bit frame directly to hardware register */
-        spi_get_hw(g_ssd1681.spi)->dr = frame;
+        // spi_get_hw(g_ssd1681.spi)->dr = frame;
+        spi_write16_blocking(g_ssd1681.spi, &frame, 1);
         
         /* Wait for transmission complete */
-        while (spi_is_busy(g_ssd1681.spi)) tight_loop_contents();
+        // while (spi_is_busy(g_ssd1681.spi)) tight_loop_contents();
     } else {
         /* 4-wire: Standard 8-bit SPI */
         spi_write_blocking(g_ssd1681.spi, &data, 1);
@@ -326,7 +327,6 @@ static void ssd1681_spi_write_byte(uint8_t data)
  */
 static void ssd1681_write_cmd(uint8_t cmd)
 {
-    ssd1681_set_spi_mode_and_clk(&g_ssd1681.config);  /* Ensure correct SPI mode is set */
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
         g_ssd1681.dc_state = 0;  /* Command mode */
     } else {
@@ -334,7 +334,9 @@ static void ssd1681_write_cmd(uint8_t cmd)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);  /* CS = 0 */
+    sleep_us(1);
     ssd1681_spi_write_byte(cmd);
+    sleep_us(1);
     gpio_put(g_ssd1681.config.pin_cs, 1);  /* CS = 1 */
 }
 
@@ -343,7 +345,6 @@ static void ssd1681_write_cmd(uint8_t cmd)
  */
 static void ssd1681_write_data(uint8_t data)
 {
-    ssd1681_set_spi_mode_and_clk(&g_ssd1681.config);  /* Ensure correct SPI mode is set */
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
         g_ssd1681.dc_state = 1;  /* Data mode */
     } else {
@@ -351,7 +352,9 @@ static void ssd1681_write_data(uint8_t data)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);
+    sleep_us(1);
     ssd1681_spi_write_byte(data);
+    sleep_us(1);
     gpio_put(g_ssd1681.config.pin_cs, 1);
 }
 
@@ -360,7 +363,6 @@ static void ssd1681_write_data(uint8_t data)
  */
 static void ssd1681_write_data_buf(const uint8_t *data, uint16_t len)
 {
-    ssd1681_set_spi_mode_and_clk(&g_ssd1681.config);  /* Ensure correct SPI mode is set */
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
         g_ssd1681.dc_state = 1;
     } else {
@@ -368,9 +370,11 @@ static void ssd1681_write_data_buf(const uint8_t *data, uint16_t len)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);
+    sleep_us(1);  /* Short delay to ensure CS is registered by display */
     for (uint16_t i = 0; i < len; i++) {
         ssd1681_spi_write_byte(data[i]);
     }
+    sleep_us(1);  /* Short delay to ensure CS is registered by display */
     gpio_put(g_ssd1681.config.pin_cs, 1);
 }
 
@@ -469,31 +473,36 @@ void ssd1681_get_default_config_3wire(ssd1681_config_t *config)
 }
 
 static void ssd1681_set_spi_mode_and_clk(ssd1681_config_t *config) {
+    
+    if(spi_get_baudrate(g_ssd1681.spi) != config->spi_baudrate){
+        spi_set_baudrate(g_ssd1681.spi, config->spi_baudrate);
+    }
 
     if (config->spi_mode == SSD1681_SPI_3WIRE) {
         /* Configure for 9-bit frames */
-        spi_hw_t *spi_hw = spi_get_hw(g_ssd1681.spi);
-        hw_clear_bits(&spi_hw->cr1, SPI_SSPCR1_SSE_BITS);  /* Disable SPI */
-        spi_hw->cr0 = (8 << SPI_SSPCR0_DSS_LSB) |  /* 9-bit (DSS = bits - 1) */
-                      (0 << SPI_SSPCR0_FRF_LSB) |  /* SPI format */
-                      (0 << SPI_SSPCR0_SPO_LSB) |  /* CPOL = 0 */
-                      (0 << SPI_SSPCR0_SPH_LSB);   /* CPHA = 0 */
-        hw_set_bits(&spi_hw->cr1, SPI_SSPCR1_SSE_BITS);  /* Re-enable SPI */
-        // spi_set_format(
-        //         g_ssd1681.spi,          // SPI instance (spi0 or spi1)
-        //         9,                      // data_bits: 9 (valid range 4–16)
-        //         SPI_CPOL_0,             // clock polarity = 0 (matches your original SPO=0)
-        //         SPI_CPHA_0,             // clock phase = 0     (matches your original SPH=0)
-        //         SPI_MSB_FIRST           // order: MSB first (standard for displays; the 9th bit is sent first as D/C)
-        //     );
+
+        // spi_hw_t *spi_hw = spi_get_hw(g_ssd1681.spi);
+        // hw_clear_bits(&spi_hw->cr1, SPI_SSPCR1_SSE_BITS);  /* Disable SPI */
+        // spi_hw->cr0 = (8 << SPI_SSPCR0_DSS_LSB) |  /* 9-bit (DSS = bits - 1) */
+        //               (0 << SPI_SSPCR0_FRF_LSB) |  /* SPI format */
+        //               (0 << SPI_SSPCR0_SPO_LSB) |  /* CPOL = 0 */
+        //               (0 << SPI_SSPCR0_SPH_LSB);   /* CPHA = 0 */
+        // hw_set_bits(&spi_hw->cr1, SPI_SSPCR1_SSE_BITS);  /* Re-enable SPI */
+
+        spi_set_format(
+                g_ssd1681.spi,          // SPI instance (spi0 or spi1)
+                9,                      // data_bits: 9 (valid range 4–16)
+                SPI_CPOL_0,             // clock polarity = 0 (matches your original SPO=0)
+                SPI_CPHA_0,             // clock phase = 0     (matches your original SPH=0)
+                SPI_MSB_FIRST           // order: MSB first (standard for displays; the 9th bit is sent first as D/C)
+            );
+
+        // spi_set_baudrate(g_ssd1681.spi, 75 * MHZ); /* set to max speed, the display will ignore if it's too high */
     } else {
         /* Standard 8-bit SPI */
         spi_set_format(g_ssd1681.spi, 8, SPI_CPOL_0, SPI_CPHA_0, SPI_MSB_FIRST);
     }
 
-    // if(spi_get_baudrate(g_ssd1681.spi) != config->spi_baudrate){
-    //     spi_set_baudrate(g_ssd1681.spi, config->spi_baudrate);
-    // }
 }
 
 /**

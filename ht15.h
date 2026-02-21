@@ -250,7 +250,7 @@ static void display_init(){
     ssd1681_config_t display_config;
     ssd1681_get_default_config_3wire(&display_config);
     display_config.spi_port = 1;
-    display_config.spi_baudrate = 10 * MHZ;
+    display_config.spi_baudrate = (u32)(75 * MHZ);
     display_config.spi_mode = SSD1681_SPI_3WIRE;
     display_config.pin_mosi = pin_spi1_sdi;
     display_config.pin_sck = pin_spi1_clk;
