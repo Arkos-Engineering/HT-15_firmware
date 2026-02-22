@@ -306,16 +306,11 @@ static void ssd1681_spi_write_byte(uint8_t data)
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
         /* 3-wire: Send 9-bit frame (D/C + 8 data bits) */
         uint16_t frame = ((uint16_t)g_ssd1681.dc_state << 8) | data;
-        
-        /* Wait for TX FIFO space */
-        // while (!spi_is_writable(g_ssd1681.spi)) tight_loop_contents();
-        
-        /* Write 9-bit frame directly to hardware register */
-        // spi_get_hw(g_ssd1681.spi)->dr = frame;
-        spi_write16_blocking(g_ssd1681.spi, &frame, 1);
-        
-        /* Wait for transmission complete */
-        // while (spi_is_busy(g_ssd1681.spi)) tight_loop_contents();
+        while (!spi_is_writable(g_ssd1681.spi)) tight_loop_contents();
+        spi_get_hw(g_ssd1681.spi)->dr = frame;
+        while (spi_is_busy(g_ssd1681.spi)) tight_loop_contents();
+
+        // spi_write16_blocking(g_ssd1681.spi, &frame, 1);
     } else {
         /* 4-wire: Standard 8-bit SPI */
         spi_write_blocking(g_ssd1681.spi, &data, 1);
@@ -334,9 +329,9 @@ static void ssd1681_write_cmd(uint8_t cmd)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);  /* CS = 0 */
-    sleep_us(1);
+    sleep_us(10);
     ssd1681_spi_write_byte(cmd);
-    sleep_us(1);
+    sleep_us(10);
     gpio_put(g_ssd1681.config.pin_cs, 1);  /* CS = 1 */
 }
 
@@ -352,9 +347,9 @@ static void ssd1681_write_data(uint8_t data)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);
-    sleep_us(1);
+    sleep_us(10);
     ssd1681_spi_write_byte(data);
-    sleep_us(1);
+    sleep_us(10);
     gpio_put(g_ssd1681.config.pin_cs, 1);
 }
 
@@ -370,11 +365,15 @@ static void ssd1681_write_data_buf(const uint8_t *data, uint16_t len)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);
-    sleep_us(1);  /* Short delay to ensure CS is registered by display */
-    for (uint16_t i = 0; i < len; i++) {
-        ssd1681_spi_write_byte(data[i]);
+    sleep_us(10);  /* Short delay to ensure CS is registered by display */
+    if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
+        for (uint16_t i = 0; i < len; i++) {
+            ssd1681_spi_write_byte(data[i]);
+        }
+    } else {
+        spi_write_blocking(g_ssd1681.spi, data, len);
     }
-    sleep_us(1);  /* Short delay to ensure CS is registered by display */
+    sleep_us(10);  /* Short delay to ensure CS is registered by display */
     gpio_put(g_ssd1681.config.pin_cs, 1);
 }
 

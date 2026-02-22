@@ -410,8 +410,6 @@ static void audio_init(){
 }
 
 HT15_EXPORT bool8 ht15_initalize(void){
-    // set_sys_clock_khz(120000, true);
-    // set_sys
 
     gpio_init(pin_led_status);
     gpio_set_dir(pin_led_status, GPIO_OUT);
@@ -443,8 +441,13 @@ HT15_EXPORT bool8 ht15_initalize(void){
     gpio_init(pin_encoder_b);
     gpio_set_dir(pin_encoder_b, GPIO_IN);
 
+    u32 clk_mhz = 150;
+    set_sys_clock_khz(clk_mhz * KHZ, false);
+    clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, clk_mhz * MHZ, clk_mhz * MHZ); // set periphreal clock to same as system clock to not be limited at USB clock max (48MHz/2)
 
     sleep_ms(1000);
+
+    printf("System clock: %d MHz\n", clock_get_hz(clk_sys) / MHZ);
 
     /* initalize i2c */
     i2c1_hw->enable = 0;
@@ -530,7 +533,7 @@ HT15_EXPORT bool8 ht15_run(void){
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
             char channel_string[10];
             snprintf(channel_string, 10, "CH %d", selected_channel);
-            printf("%s\n", channel_string);
+            // printf("%s\n", channel_string);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 50, "HT-15", 5, 1, SSD1681_FONT_24);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 6, 1, SSD1681_FONT_12);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
