@@ -329,10 +329,11 @@ static void ssd1681_write_cmd(uint8_t cmd)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);  /* CS = 0 */
-    sleep_us(10);
+    sleep_us(1);
     ssd1681_spi_write_byte(cmd);
-    sleep_us(10);
+    sleep_us(1);
     gpio_put(g_ssd1681.config.pin_cs, 1);  /* CS = 1 */
+    sleep_us(1);
 }
 
 /**
@@ -347,10 +348,11 @@ static void ssd1681_write_data(uint8_t data)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);
-    sleep_us(10);
+    sleep_us(1);
     ssd1681_spi_write_byte(data);
-    sleep_us(10);
+    sleep_us(1);
     gpio_put(g_ssd1681.config.pin_cs, 1);
+    sleep_us(1);
 }
 
 /**
@@ -365,7 +367,7 @@ static void ssd1681_write_data_buf(const uint8_t *data, uint16_t len)
     }
     
     gpio_put(g_ssd1681.config.pin_cs, 0);
-    sleep_us(10);  /* Short delay to ensure CS is registered by display */
+    sleep_us(1);
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
         for (uint16_t i = 0; i < len; i++) {
             ssd1681_spi_write_byte(data[i]);
@@ -373,8 +375,9 @@ static void ssd1681_write_data_buf(const uint8_t *data, uint16_t len)
     } else {
         spi_write_blocking(g_ssd1681.spi, data, len);
     }
-    sleep_us(10);  /* Short delay to ensure CS is registered by display */
+    sleep_us(1);
     gpio_put(g_ssd1681.config.pin_cs, 1);
+    sleep_us(1);
 }
 
 /**
@@ -532,6 +535,7 @@ int ssd1681_init(const ssd1681_config_t *config)
     gpio_init(config->pin_cs);
     gpio_set_dir(config->pin_cs, GPIO_OUT);
     gpio_put(config->pin_cs, 1);
+    sleep_us(1);
     
     if (config->spi_mode == SSD1681_SPI_4WIRE) {
         gpio_init(config->pin_dc);

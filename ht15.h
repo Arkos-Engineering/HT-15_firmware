@@ -441,9 +441,8 @@ HT15_EXPORT bool8 ht15_initalize(void){
     gpio_init(pin_encoder_b);
     gpio_set_dir(pin_encoder_b, GPIO_IN);
 
-    u32 clk_mhz = 150;
-    set_sys_clock_khz(clk_mhz * KHZ, false);
-    clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, clk_mhz * MHZ, clk_mhz * MHZ); // set periphreal clock to same as system clock to not be limited at USB clock max (48MHz/2)
+    set_sys_clock_khz(PROCESSOR_CLOCK_MHZ * KHZ, false);
+    clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, PROCESSOR_CLOCK_MHZ * MHZ, PROCESSOR_CLOCK_MHZ * MHZ); // set periphreal clock to same as system clock to not be limited at USB clock max (48MHz/2)
 
     sleep_ms(1000);
 

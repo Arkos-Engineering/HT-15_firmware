@@ -32,6 +32,8 @@ typedef char const * c_str;
 #define MHZ 1000000
 #define KHZ 1000
 
+#define PROCESSOR_CLOCK_MHZ 150
+
 #define audioamp_i2c_address 0b0011000
 
 #define PINS \
