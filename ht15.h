@@ -40,7 +40,7 @@ HT15_EXPORT bool8 ht15_run(void);
 #define PICO_TLV320DAC3100_IMPLEMENTATION
 #include "pico_tlv320dac3100.h"
 
-// #include "quadrature_encoder.pio"
+#include "quadrature_encoder.pio.h"
 
 const u8 button_sense_pin[] = {pin_buttonmatrix_0, pin_buttonmatrix_1, pin_buttonmatrix_2, pin_buttonmatrix_3, pin_buttonmatrix_4, pin_buttonmatrix_5};
 const u8 button_power_pin[] = {pin_buttonmatrix_a, pin_buttonmatrix_b, pin_buttonmatrix_c, pin_buttonmatrix_d};
@@ -64,11 +64,13 @@ key_tag key_map[BUTTONS_SIZE] = {
     key_star, key_0,    key_hash,  key_unknown,
 };
 
-u32 encoder_debounce_state = 0;
-i8 encoder_state = 0;
+u32 encoder_last_value = 0;
+u8 encoder_debounce_state = 0;
 
 u8 last_volume = 0;
 u8 current_volume = 0;
+
+u8 selected_channel = 1;
 
 tlv320dac3100_t audioamp;
 static f32 calculate_volume(u8 volume);
@@ -105,76 +107,6 @@ static u8 get_volume_pot(){
     return 0;
 }
 
-/* TODO@Zea as of December 20 2025 add knobs */
-static void poll_input(){
-    u32 columns = array_size(button_power_pin);
-    u32 rows = array_size(button_sense_pin);
-    ifor(c, columns){
-        gpio_put(button_power_pin[c], 1);
-        sleep_us(1);
-        ifor(r, rows){
-            bool8 pin = gpio_get(button_sense_pin[r]);
-            button_debounce_buffer[(button_debounce_buffer_index * columns * rows) + r * columns + c] = pin;
-        }
-        gpio_put(button_power_pin[c], 0);
-        sleep_us(1);
-    }
-    /* evaluate if a button is released or not */
-    bool8 buttons[BUTTONS_SIZE] = {0};
-    ifor(b, BUTTONS_SIZE) {
-        ifor(d, BUTTON_DEBOUNCE_BUFFER_SIZE){
-            u32 buffer_offset = circle_buffer_index_at(2, button_debounce_buffer_index - d);
-            /* quick and durty but if the last 4 loops and the button is off we can assume its actually off and not ringing.*/
-            buttons[b] = button_debounce_buffer[buffer_offset * BUTTONS_SIZE + b]; 
-        }
-    }
-    button_debounce_buffer_index = circle_buffer_index_at(2, button_debounce_buffer_index+1);
-    
-    ifor(b, BUTTONS_SIZE){
-        u32 key = key_map[b];
-        if(key == key_unknown) continue;
-
-        if(buttons[b]){
-            if(key_states[key] == key_state_repeat) continue;
-            else if(key_states[key] == key_state_pressed){
-                /* time32 time_sense_last_change = time_us_32() - last_key_changed_timestamp[key];
-                printf("button %" PRIu32" time %" PRIu32" \n", b, last_key_changed_timestamp[key]);
-                if(time_sense_last_change > millis_until_repeating){
-                    key_states[key] = key_state_repeat;
-                } */
-            }else {
-                key_states[key] = key_state_pressed;
-                last_key_changed_timestamp[key] = time_us_32();
-            }
-        }else{
-            key_states[key] = key_state_released;
-            last_key_changed_timestamp[key] = time_us_32();
-        }
-    }
-
-    /* process encoder */
-    encoder_debounce_state=((encoder_debounce_state<<1) | gpio_get(pin_encoder_a)) & 0b111;/* store the last three states of the encoder A pin */
-    if(encoder_debounce_state==0b100){
-        if(gpio_get(pin_encoder_b)){
-            encoder_state = 1;
-            printf("Channel +\n");
-        } else{
-            encoder_state = -1;
-            printf("Channel -\n");
-        }
-        encoder_debounce_state=0;
-    }else{
-        encoder_state = 0;
-    }
-
-    /* read volume pot */
-    current_volume = get_volume_pot();
-    if(abs(current_volume-last_volume)>2){
-        printf("%"PRIu8":volume\n", current_volume);
-        last_volume = current_volume;
-        audio_amp_set_volume(current_volume);
-    }
-}
 
 static void print_button_debounce_buffer(){
     ifor(i, 1<<2){
@@ -276,6 +208,39 @@ static void display_init(){
     ssd1681_clear(SSD1681_COLOR_BLACK);
     ssd1681_write_buffer(SSD1681_COLOR_BLACK);
     ssd1681_update(SSD1681_UPDATE_CLEAN_FULL);
+}
+
+static void encoder_init(){
+    gpio_init(pin_encoder_a);
+    gpio_set_dir(pin_encoder_a, GPIO_IN);
+    gpio_init(pin_encoder_b);
+    gpio_set_dir(pin_encoder_b, GPIO_IN);
+
+    //cant use PIO in the prototype. GPIO 31 and 32 are in different blocks and the quadrature encoder PIO program needs both pins to be in the same block.
+    /* initialize quadrature encoder PIO program on pin_encoder_a and pin_encoder_b */
+    // pio_add_program(ENCODER_PIO, &quadrature_encoder_program);
+    // quadrature_encoder_program_init(ENCODER_PIO, ENCODER_SM, pin_encoder_a, 0);
+}
+static i8 encoder_get_difference(){
+    encoder_debounce_state=((encoder_debounce_state<<1) | gpio_get(pin_encoder_a)) & 0b111;/* store the last three states of the encoder A pin */
+    if(encoder_debounce_state==0b100){
+        if(gpio_get(pin_encoder_b)){
+            printf("Channel +\n");
+            return 1;
+        } else{
+            printf("Channel -\n");
+            return -1;
+        }
+    }
+    return 0;
+    
+    // Below is for PIO. cant use it on prototype because of pin assignment issues mentioned in encoder_init()
+    // u32 new_value = quadrature_encoder_get_count(ENCODER_PIO, ENCODER_SM);
+    // i8 difference = (i32)(new_value - encoder_last_value);
+    // printf("Encoder raw value: %"PRIu32"\n", new_value);
+    // printf("Encoder difference: %"PRId8"\n", difference);
+    // encoder_last_value = new_value;
+    // return difference;
 }
 
 static void audio_amp_reset_hard(){
@@ -411,6 +376,66 @@ static void audio_init(){
     sleep_ms(50);
 }
 
+/* TODO@Zea as of December 20 2025 add knobs */
+static void poll_input(){
+    u32 columns = array_size(button_power_pin);
+    u32 rows = array_size(button_sense_pin);
+    ifor(c, columns){
+        gpio_put(button_power_pin[c], 1);
+        sleep_us(1);
+        ifor(r, rows){
+            bool8 pin = gpio_get(button_sense_pin[r]);
+            button_debounce_buffer[(button_debounce_buffer_index * columns * rows) + r * columns + c] = pin;
+        }
+        gpio_put(button_power_pin[c], 0);
+        sleep_us(1);
+    }
+    /* evaluate if a button is released or not */
+    bool8 buttons[BUTTONS_SIZE] = {0};
+    ifor(b, BUTTONS_SIZE) {
+        ifor(d, BUTTON_DEBOUNCE_BUFFER_SIZE){
+            u32 buffer_offset = circle_buffer_index_at(2, button_debounce_buffer_index - d);
+            /* quick and durty but if the last 4 loops and the button is off we can assume its actually off and not ringing.*/
+            buttons[b] = button_debounce_buffer[buffer_offset * BUTTONS_SIZE + b]; 
+        }
+    }
+    button_debounce_buffer_index = circle_buffer_index_at(2, button_debounce_buffer_index+1);
+    
+    ifor(b, BUTTONS_SIZE){
+        u32 key = key_map[b];
+        if(key == key_unknown) continue;
+
+        if(buttons[b]){
+            if(key_states[key] == key_state_repeat) continue;
+            else if(key_states[key] == key_state_pressed){
+                /* time32 time_sense_last_change = time_us_32() - last_key_changed_timestamp[key];
+                printf("button %" PRIu32" time %" PRIu32" \n", b, last_key_changed_timestamp[key]);
+                if(time_sense_last_change > millis_until_repeating){
+                    key_states[key] = key_state_repeat;
+                } */
+            }else {
+                key_states[key] = key_state_pressed;
+                last_key_changed_timestamp[key] = time_us_32();
+            }
+        }else{
+            key_states[key] = key_state_released;
+            last_key_changed_timestamp[key] = time_us_32();
+        }
+    }
+
+    /* process encoder */
+    selected_channel += encoder_get_difference();
+
+    /* read volume pot */
+    current_volume = get_volume_pot();
+    if(abs(current_volume-last_volume)>2){
+        printf("%"PRIu8":volume\n", current_volume);
+        last_volume = current_volume;
+        audio_amp_set_volume(current_volume);
+    }
+}
+
+
 HT15_EXPORT bool8 ht15_initalize(void){
 
     gpio_init(pin_led_status);
@@ -438,10 +463,6 @@ HT15_EXPORT bool8 ht15_initalize(void){
             gpio_set_dir(button_power_pin[i], GPIO_OUT);
             gpio_pull_down(button_power_pin[i]);
     }
-    gpio_init(pin_encoder_a);
-    gpio_set_dir(pin_encoder_a, GPIO_IN);
-    gpio_init(pin_encoder_b);
-    gpio_set_dir(pin_encoder_b, GPIO_IN);
 
     set_sys_clock_khz(PROCESSOR_CLOCK_MHZ * KHZ, false);
     clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, PROCESSOR_CLOCK_MHZ * MHZ, PROCESSOR_CLOCK_MHZ * MHZ); // set periphreal clock to same as system clock to not be limited at USB clock max (48MHz/2)
@@ -476,6 +497,8 @@ HT15_EXPORT bool8 ht15_initalize(void){
     display_init();
     printf("initalize audio\n");
     audio_init();
+    printf("initalize encoder\n");
+    encoder_init();
 
     // printf("initalize sd\n");
     /* SD card needs to init before anything else because it starts in SD mode and needs to be switched to SPI mode before the display can be used, which shares the same SPI bus */
@@ -492,7 +515,11 @@ HT15_EXPORT bool8 ht15_initalize(void){
 HT15_EXPORT bool8 ht15_run(void){
     u32 cycle = 0;
     bool8 should_clean_display = 1;
-    u8 selected_channel = 1;
+
+    u64 loop_time_target_us = 10000; //target loop time of 10ms
+    uint16_t slowest_loop_time_us = 0;
+    float rolling_average_loop_time_us = 0.0f;
+    uint64_t loop_start_us = time_us_64();
     while(1){
         poll_input();
 
@@ -515,19 +542,6 @@ HT15_EXPORT bool8 ht15_run(void){
             audio_beep(4000, 20, calculate_volume(current_volume));
         } else if((cycle & 0b11111) == 0b11111) led_status_value = !led_status_value;
 
-        encoder_state=((encoder_state<<1) | gpio_get(pin_encoder_a)) & 0b111;//store the last three states of the encoder A pin
-        if(encoder_state==0b10){
-            if(gpio_get(pin_encoder_b)){
-                printf("Channel +\n");
-                selected_channel++;
-            } else{
-                printf("Channel -\n");
-                selected_channel--;
-            }
-            // encoder_state=0;
-        }
-
-
         if(!(cycle & 31)){
         // if(cycle % 100 == 0){
             char voltage_string[6];
@@ -536,7 +550,7 @@ HT15_EXPORT bool8 ht15_run(void){
             snprintf(channel_string, 10, "CH %d", selected_channel);
             // printf("%s\n", channel_string);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 50, "HT-15", 5, 1, SSD1681_FONT_24);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 6, 1, SSD1681_FONT_12);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 8, 1, SSD1681_FONT_12);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
 
             char volume_string[10];
@@ -548,11 +562,21 @@ HT15_EXPORT bool8 ht15_run(void){
             } else {
                 ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
             }
+            
         }
 
         gpio_put(pin_led_status, led_status_value);
         cycle += 1;
-        sleep_ms(24);
+
+
+        //control loop timing, track slowest loop time and rolling average for performance monitoring
+        loop_start_us = time_us_64()-loop_start_us;
+        sleep_us(loop_time_target_us>loop_start_us ? loop_time_target_us-loop_start_us : 0);
+        if (loop_start_us > slowest_loop_time_us){
+            slowest_loop_time_us = loop_start_us;
+        }
+        rolling_average_loop_time_us = (rolling_average_loop_time_us  *0.999f) + ((float)loop_start_us * 0.001f);
+        loop_start_us = time_us_64();
     }
     return 1;
 }

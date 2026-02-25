@@ -34,7 +34,18 @@ typedef char const * c_str;
 
 #define PROCESSOR_CLOCK_MHZ 150
 
+//I2C addresses
 #define audioamp_i2c_address 0b0011000
+
+//PIO assignments, PIO block and state machine
+#define ENCODER_PIO pio0
+#define ENCODER_SM 0
+#define I2S_MIC_PIO pio1
+#define I2S_MIC_SM 0
+#define I2S_HEADSET_MIC_PIO pio1
+#define I2S_HEADSET_MIC_SM 1
+#define I2S_OUTPUT_PIO pio1
+#define I2S_OUTPUT_SM 2
 
 #define PINS \
     X(buttonmatrix_a,       0)\
