@@ -540,9 +540,9 @@ HT15_EXPORT bool8 ht15_run(void){
         else */ if(any_key_pressed){
             led_status_value = 0;
             audio_beep(4000, 20, calculate_volume(current_volume));
-        } else if((cycle & 0b11111) == 0b11111) led_status_value = !led_status_value;
+        } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;
 
-        if(!(cycle & 31)){
+        if(!(cycle & 63)){
         // if(cycle % 100 == 0){
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
