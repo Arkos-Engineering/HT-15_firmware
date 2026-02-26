@@ -23,6 +23,11 @@ typedef _Bool bool8;
 
 typedef char const * c_str;
 
+typedef struct{
+    u8 * data;
+    u32 size;
+} fat_str ;
+
 #define U32_MAX UINT32_MAX
 
 #define ifor(i, v) for(u32 i = 0; i < (u32)v; ++i)
