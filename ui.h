@@ -39,6 +39,9 @@ typedef struct{
         htui_display_draw_command_mode mode;
 } htui_display_draw_command;
 
+
+/*TODO: these external functions only work in a static linking context, if we are dynamic linking these probably need to be function pointers that are stored in the state. */
+
 /* this is meant to be implementoud by the code using this module. this is called multiple times until the mode is set to finished. */
 HTUI_EXTERNAL_EXPORT bool8 htui_external_draw(htui_display_draw_command * command, void * p_user_state);
 
@@ -49,9 +52,9 @@ typedef struct {
         u8 x, y, xoff, yoff;
 } htui_glyph;
 
-HTUI_EXTERNAL_EXPORT bool8 htui_external_list_font_files(fat_str * out_fonts, u32 * out_fonts_size, void * user_state);
+HTUI_EXTERNAL_EXPORT bool8 htui_external_list_font_files(fat_str ** out_fonts, u32 * out_fonts_size, void * user_state);
 HTUI_EXTERNAL_EXPORT bool8 htui_external_list_code_points(fat_str const font, u8 ** out_code_points, u32 * out_code_points_size, void * user_state);
-HTUI_EXTERNAL_EXPORT bool8 htui_external_load_glyph(fat_str const font, u8 * code_point, htui_glyph * out_glyph, void * user_state);
+HTUI_EXTERNAL_EXPORT bool8 htui_external_load_glyph(fat_str const font, u32 code_point_index, htui_glyph ** out_glyph, void * user_state);
 
 typedef enum PACKED{
         htui_begin_pressable_type,
@@ -137,6 +140,7 @@ typedef struct{
         /*TODO as of Mar 11 2025: hold onto previous state for each component to tell if it needs to be re-rendered for its section of the screen. @Zea Lynn*/
 
         htui_command * commands;
+        u32 commands_size;
 
 } htui_state;
 
@@ -172,7 +176,7 @@ u8 buffer[200*200] = {0};
 
 _HTUI_EXPORT void htui_initalize(htui_state * state);
 _HTUI_EXPORT bool8 htui_begin(htui_state * state){
-        state->commands_count = 0;
+        state->commands_size = 0;
         return true;
 }
 
@@ -192,9 +196,8 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state, void * user_state){
         return 1;
 }
 _HTUI_EXPORT htui_component_state htui_begin_pressable(htui_state * state, u16 component_id){
-        state->commands
-        state->commands_count
 }
+
 _HTUI_EXPORT void htui_end_pressable(htui_state * state);
 _HTUI_EXPORT void htui_text(htui_state * state, fat_str text, htui_text_display_type display);
 _HTUI_EXPORT void htui_button(htui_state * state, u16 component_id, fat_str text);
