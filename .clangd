@@ -1,0 +1,6 @@
+If:
+    PathMatch: [ui_example_test.c]
+CompileFlags:
+    CompilationDatabase: None
+    Add: [-xc, -std=c99, -pedantic, -Wall, -Wextra]
+    Compiler: cc
