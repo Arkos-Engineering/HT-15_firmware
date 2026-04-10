@@ -37,10 +37,35 @@ HT15_EXPORT bool8 ht15_run(void);
 
 #define PICO_SSD1681_IMPLEMENTATION
 #include"pico_ssd1681.h"
+
 #define PICO_TLV320DAC3100_IMPLEMENTATION
 #include "pico_tlv320dac3100.h"
 
+#define RFMODULE_2M70CM_IMPLEMENTATION
+#include "rfmodule_2M70CM.h"
+
 #include "quadrature_encoder.pio.h"
+
+rfmodule_config_t rfmodule_config = {
+    .spi_port = 0,
+    .spi_pin_mosi = pin_rf_sclk,
+    .spi_pin_miso = pin_rf_sdi,
+    .spi_pin_sck = pin_rf_sclk,
+    .spi_pin_cs = pin_rf_sel,
+    .spi_baudrate = 10 * MHZ,
+    .spi_shared = false,
+
+    .i2c_port = 1,
+    .i2c_pin_sda = pin_i2c1_sda,
+    .i2c_pin_scl = pin_i2c1_scl,
+    .i2c_baudrate = 100 * KHZ,
+    .i2s_shared = true,
+
+    .pin_gpio0 = pin_rf_gpio0,
+    .pin_gpio1 = pin_rf_gpio1,
+    .pin_gpio2 = pin_rf_gpio2,
+    .pin_gpio3 = pin_rf_gpio3,
+};
 
 const u8 button_sense_pin[] = {pin_buttonmatrix_0, pin_buttonmatrix_1, pin_buttonmatrix_2, pin_buttonmatrix_3, pin_buttonmatrix_4, pin_buttonmatrix_5};
 const u8 button_power_pin[] = {pin_buttonmatrix_a, pin_buttonmatrix_b, pin_buttonmatrix_c, pin_buttonmatrix_d};
@@ -141,6 +166,16 @@ static void spi1_force_select(spi1_device device){
     gpio_put(pin_display_cs, !(device == spi1_device_display));
     gpio_put(pin_flash_cs,   !(device == spi1_device_flash));
     gpio_put(pin_sd_cs,      !(device == spi1_device_sd));
+}
+
+static void rf_init(){
+    if(rfmodule_2m70cm_init(&rfmodule_config)!=0){
+        printf("Error initializing RF module!\n");
+        return;
+    } else{
+        printf("RF module initialized successfully!\n");
+    }
+    rfmodule_2m70cm_set_power_mode(&rfmodule_config, RFMODULE_2M70CM_POWER_MODE_OFF);
 }
 
 static void sd_init(){
@@ -495,10 +530,12 @@ HT15_EXPORT bool8 ht15_initalize(void){
     /*TODO: all display stuff goes on another thread*/
     printf("initalize display\n");
     display_init();
-    printf("initalize audio\n");
-    audio_init();
     printf("initalize encoder\n");
     encoder_init();
+    printf("initalize rf\n");
+    rf_init();
+    printf("initalize audio\n");
+    audio_init();
 
     // printf("initalize sd\n");
     /* SD card needs to init before anything else because it starts in SD mode and needs to be switched to SPI mode before the display can be used, which shares the same SPI bus */
