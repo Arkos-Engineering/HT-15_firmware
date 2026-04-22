@@ -7,7 +7,7 @@ extern "C" {
 #endif
 
 typedef struct  {
-    u8 spi_port;             /**< SPI port: 0 or 1 */
+    spi_inst_t *spi_port;             /**< SPI port: spi0 or spi1 */
     u8 spi_pin_mosi;             /**< MOSI pin */
     u8 spi_pin_miso;             /**< MISO pin */
     u8 spi_pin_sck;              /**< SCK pin */
@@ -16,11 +16,11 @@ typedef struct  {
     bool8 spi_shared;        /**< Whether the SPI bus is shared with other devices (e.g. display). if true, the SPI bus is expected to be initalized before use and will not be initialized by the RF module */
 
 
-    u8 i2c_port;         /**< I2C port: 0 or 1 */
+    i2c_inst_t *i2c_port;         /**< I2C port: i2c0 or i2c1 */
     u8 i2c_pin_sda;             /**< I2C SDA pin */
     u8 i2c_pin_scl;             /**< I2C SCL pin */
     u32 i2c_baudrate;        /**< I2C clock frequency in Hz */
-    bool8 i2s_shared;       /**< Whether the I2S pins are shared with other devices (e.g. audio amp) if true, the SPI bus is expected to be initalized before use and will not be initialized by the RF module */
+    bool8 i2c_shared;       /**< Whether the I2C pins are shared with other devices (e.g. audio amp) if true, the I2C bus is expected to be initalized before use and will not be initialized by the RF module */
     
     u8 pin_gpio0;           
     u8 pin_gpio1;
@@ -28,6 +28,12 @@ typedef struct  {
     u8 pin_gpio3;
 } rfmodule_config_t; ;
 
+typedef enum {
+    RFMODULE_2M70CM_ERROR_NONE = 0,
+    RFMODULE_2M_70CM_MISSING_MODULE = -1,
+    RFMODULE_2M70CM_ERROR_INVALID_PARAM = -2,
+    RFMODULE_2M70CM_ERROR_INIT_FAILED = -3,
+} rfmodule_error_code_t;
 
 typedef enum {
     RFMODULE_2M70CM_POWER_MODE_OFF = 0,
@@ -41,10 +47,40 @@ i8 rfmodule_2m70cm_set_power_mode(rfmodule_config_t *dev, rfmodule_power_mode_t 
 
 #if defined(RFMODULE_2M70CM_IMPLEMENTATION)
 i8 rfmodule_2m70cm_init(rfmodule_config_t *dev){
+
+    //init CC1200 reset pin
     gpio_init(dev->pin_gpio0);
     gpio_set_dir(dev->pin_gpio0, GPIO_OUT);
+
+    //init rf amp power control pin
     gpio_init(dev->pin_gpio1);
     gpio_set_dir(dev->pin_gpio1, GPIO_OUT);
+
+    //init SPI if not shared, otherwise assume it is already initialized and configured correctly
+    if(!dev->spi_shared){
+        spi_init(dev->spi_port, dev->spi_baudrate);
+        gpio_set_function(dev->spi_pin_mosi, GPIO_FUNC_SPI);
+        gpio_set_function(dev->spi_pin_miso, GPIO_FUNC_SPI);
+        gpio_set_function(dev->spi_pin_sck, GPIO_FUNC_SPI);
+        gpio_init(dev->spi_pin_cs);
+        gpio_set_dir(dev->spi_pin_cs, GPIO_OUT);
+        gpio_put(dev->spi_pin_cs, 1); /* deselect */
+    }
+    
+    //init I2C if not shared, otherwise assume it is already initialized and configured correctly
+    if(!dev->i2c_shared){
+        i2c_init(dev->i2c_port, dev->i2c_baudrate);
+        gpio_set_function(dev->i2c_pin_sda, GPIO_FUNC_I2C);
+        gpio_set_function(dev->i2c_pin_scl, GPIO_FUNC_I2C);
+        gpio_pull_up(dev->i2c_pin_sda);
+        gpio_pull_up(dev->i2c_pin_scl);
+    }
+
+    //power down RF amp and reset the module to start in a known state
+    rfmodule_2m70cm_set_power_mode(dev, RFMODULE_2M70CM_POWER_MODE_OFF);
+    hw_reset(dev);
+
+
     return 0;
 }
 
@@ -62,6 +98,14 @@ i8 rfmodule_2m70cm_set_power_mode(rfmodule_config_t *dev, rfmodule_power_mode_t 
         default:
             return -1; /* invalid mode */
     }
+    return 0;
+}
+
+i8 hw_reset(rfmodule_config_t *dev){
+    gpio_put(dev->pin_gpio0, 0); /* assert reset */
+    sleep_ms(10);
+    gpio_put(dev->pin_gpio0, 1); /* deassert reset */
+    sleep_ms(10);
     return 0;
 }
 

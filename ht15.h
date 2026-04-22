@@ -47,7 +47,7 @@ HT15_EXPORT bool8 ht15_run(void);
 #include "quadrature_encoder.pio.h"
 
 rfmodule_config_t rfmodule_config = {
-    .spi_port = 0,
+    .spi_port = spi0,
     .spi_pin_mosi = pin_rf_sclk,
     .spi_pin_miso = pin_rf_sdi,
     .spi_pin_sck = pin_rf_sclk,
@@ -55,11 +55,11 @@ rfmodule_config_t rfmodule_config = {
     .spi_baudrate = 10 * MHZ,
     .spi_shared = false,
 
-    .i2c_port = 1,
+    .i2c_port = i2c1,
     .i2c_pin_sda = pin_i2c1_sda,
     .i2c_pin_scl = pin_i2c1_scl,
     .i2c_baudrate = 100 * KHZ,
-    .i2s_shared = true,
+    .i2c_shared = true,
 
     .pin_gpio0 = pin_rf_gpio0,
     .pin_gpio1 = pin_rf_gpio1,
@@ -175,7 +175,6 @@ static void rf_init(){
     } else{
         printf("RF module initialized successfully!\n");
     }
-    rfmodule_2m70cm_set_power_mode(&rfmodule_config, RFMODULE_2M70CM_POWER_MODE_OFF);
 }
 
 static void sd_init(){
