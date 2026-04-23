@@ -6,7 +6,7 @@
 extern "C" {
 #endif
 
-typedef struct  {
+typedef struct {
     spi_inst_t *spi_port;             /**< SPI port: spi0 or spi1 */
     u8 spi_pin_mosi;             /**< MOSI pin */
     u8 spi_pin_miso;             /**< MISO pin */
@@ -26,7 +26,24 @@ typedef struct  {
     u8 pin_gpio1;
     u8 pin_gpio2;
     u8 pin_gpio3;
-} rfmodule_config_t; ;
+} rfmodule_config_t;
+
+typedef enum {
+    SRES = 0x30, /* Reset chip. */
+    SFSTXON,/* Enable and calibrate frequency synthesizer (if MCSM0.FS_AUTOCAL=1). */
+    SXOFF, /* Turn off crystal oscillator. */
+    SCAL, /* Calibrate frequency synthesizer and turn it off. */
+    SRX, /* Enable RX. Perform calibration first if coming from */
+    STX, /* Enable TX. Perform calibration first if coming from */
+    SIDLE, /* Exit RX / TX, turn off frequency synthesizer and exit Wake-On-Radio mode if applicable. */
+    SAFC, /* Perform AFC adjustment of the frequency synthesizer */
+    SWOR, /* Start automatic RX polling sequence (Wake-on-Radio) */
+    SPWD, /* Enter power down mode when CSn goes high. */
+    SFRX, /* Flush the RX FIFO buffer. Only issue SFRX in IDLE or RXFIFO_OVERFLOW states. */
+    SFTX, /* Flush the TX FIFO buffer. Only issue SFTX in IDLE or TXFIFO_UNDERFLOW states. */
+    SWORRST, /* Reset real time clock. Only issue SWORRST in IDLE state. */
+    SNOP /* No operation. May be used to get access to the chip status byte. */
+}rfmodule_2m70cm_cmd_strobe;
 
 typedef enum {
     RFMODULE_2M70CM_ERROR_NONE = 0,
@@ -42,13 +59,13 @@ typedef enum {
 } rfmodule_power_mode_t;
 
 u8 rfmodule_2m70cm_set_cs(rfmodule_config_t *dev, bool8 value);
+u8 rfmodule_2m70cm_write_cmd(rfmodule_config_t *dev, rfmodule_2m70cm_cmd_strobe addr);
 u8 rfmodule_2m70cm_write_register(rfmodule_config_t *dev, u16 addr, u8 value);
 u8 rfmodule_2m70cm_read_register(rfmodule_config_t *dev, u16 addr);
 i8 rfmodule_2m70cm_init(rfmodule_config_t *dev);
+i8 rfmodule_2m70cm_hw_reset(rfmodule_config_t *dev);
 i8 rfmodule_2m70cm_set_power_mode(rfmodule_config_t *dev, rfmodule_power_mode_t mode);
-
-
-
+void rfmodule_2m70cm_set_frequency(rfmodule_config_t *dev, u32 frequency_hz);
 
 #if defined(RFMODULE_2M70CM_IMPLEMENTATION)
 // SPI chip select 
@@ -56,10 +73,16 @@ u8 rfmodule_2m70cm_set_cs(rfmodule_config_t *dev, bool8 value){
     gpio_put(dev->spi_pin_cs, value); /* active low CS */
 }
 
+u8 rfmodule_2m70cm_write_cmd(rfmodule_config_t *dev, rfmodule_2m70cm_cmd_strobe addr){
+    rfmodule_2m70cm_set_cs(dev, 0);
+    spi_write_blocking(dev->spi_port, &addr, 1);
+    rfmodule_2m70cm_set_cs(dev, 1);
+}
+
 u8 rfmodule_2m70cm_write_register(rfmodule_config_t *dev, u16 addr, u8 value){
     uint8_t txd[3] = {addr>>8, addr&0xFF, value};
 
-    rfmodule_2m70cm_cs(dev, 0);
+    rfmodule_2m70cm_set_cs(dev, 0);
 
     if(txd[0] == 0){
         spi_write_blocking(dev->spi_port, txd+1, 2);
@@ -68,7 +91,7 @@ u8 rfmodule_2m70cm_write_register(rfmodule_config_t *dev, u16 addr, u8 value){
         spi_write_blocking(dev->spi_port, txd, 3);
 	}
 
-	rfmodule_2m70cm_cs(dev, 1);
+	rfmodule_2m70cm_set_cs(dev, 1);
     return value;
 }
 
@@ -76,7 +99,7 @@ u8 rfmodule_2m70cm_read_register(rfmodule_config_t *dev, u16 addr){
     uint8_t txd[2] = {addr>>8, addr&0xFF};
     u8 value = 0;
 
-    rfmodule_2m70cm_cs(dev, 0);
+    rfmodule_2m70cm_set_cs(dev, 0);
 
     if(txd[0] == 0){
         spi_write_blocking(dev->spi_port, txd+1, 1);
@@ -87,7 +110,7 @@ u8 rfmodule_2m70cm_read_register(rfmodule_config_t *dev, u16 addr){
 
     spi_read_blocking(dev->spi_port, 0, &value, 1);
 
-	rfmodule_2m70cm_cs(dev, 1);
+	rfmodule_2m70cm_set_cs(dev, 1);
     return value;
 
 }
@@ -124,7 +147,7 @@ i8 rfmodule_2m70cm_init(rfmodule_config_t *dev){
 
     //power down RF amp and reset the module to start in a known state
     rfmodule_2m70cm_set_power_mode(dev, RFMODULE_2M70CM_POWER_MODE_OFF);
-    hw_reset(dev);
+    rfmodule_2m70cm_hw_reset(dev);
 
 
     return 0;
@@ -147,12 +170,22 @@ i8 rfmodule_2m70cm_set_power_mode(rfmodule_config_t *dev, rfmodule_power_mode_t 
     return 0;
 }
 
-i8 hw_reset(rfmodule_config_t *dev){
+i8 rfmodule_2m70cm_hw_reset(rfmodule_config_t *dev){
     gpio_put(dev->pin_gpio0, 0); /* assert reset */
     sleep_ms(10);
     gpio_put(dev->pin_gpio0, 1); /* deassert reset */
     sleep_ms(10);
     return 0;
+}
+
+void rfmodule_2m70cm_set_freq(rfmodule_config_t *dev, uint32_t freq){
+	rfmodule_2m70cm_write_cmd(dev, SIDLE);
+	sleep_ms(10);
+
+	uint32_t freq_word = roundf((float)freq/5000000.0f*((uint32_t)1<<16));
+	rfmodule_2m70cm_write_register(dev, 0x2F0C, (freq_word>>16)&0xFF);
+	rfmodule_2m70cm_write_register(dev, 0x2F0D, (freq_word>>8)&0xFF);
+	rfmodule_2m70cm_write_register(dev, 0x2F0E, freq_word&0xFF);
 }
 
 #endif /* HT15_RFMODULE_2M70CM_IMPLEMENTATION */
