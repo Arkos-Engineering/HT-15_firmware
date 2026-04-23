@@ -41,11 +41,57 @@ typedef enum {
     RFMODULE_2M70CM_POWER_MODE_RX_ONLY = 2,
 } rfmodule_power_mode_t;
 
-
+u8 rfmodule_2m70cm_set_cs(rfmodule_config_t *dev, bool8 value);
+u8 rfmodule_2m70cm_write_register(rfmodule_config_t *dev, u16 addr, u8 value);
+u8 rfmodule_2m70cm_read_register(rfmodule_config_t *dev, u16 addr);
 i8 rfmodule_2m70cm_init(rfmodule_config_t *dev);
 i8 rfmodule_2m70cm_set_power_mode(rfmodule_config_t *dev, rfmodule_power_mode_t mode);
 
+
+
+
 #if defined(RFMODULE_2M70CM_IMPLEMENTATION)
+// SPI chip select 
+u8 rfmodule_2m70cm_set_cs(rfmodule_config_t *dev, bool8 value){
+    gpio_put(dev->spi_pin_cs, value); /* active low CS */
+}
+
+u8 rfmodule_2m70cm_write_register(rfmodule_config_t *dev, u16 addr, u8 value){
+    uint8_t txd[3] = {addr>>8, addr&0xFF, value};
+
+    rfmodule_2m70cm_cs(dev, 0);
+
+    if(txd[0] == 0){
+        spi_write_blocking(dev->spi_port, txd+1, 2);
+	}
+    else{
+        spi_write_blocking(dev->spi_port, txd, 3);
+	}
+
+	rfmodule_2m70cm_cs(dev, 1);
+    return value;
+}
+
+u8 rfmodule_2m70cm_read_register(rfmodule_config_t *dev, u16 addr){
+    uint8_t txd[2] = {addr>>8, addr&0xFF};
+    u8 value = 0;
+
+    rfmodule_2m70cm_cs(dev, 0);
+
+    if(txd[0] == 0){
+        spi_write_blocking(dev->spi_port, txd+1, 1);
+	}
+    else{
+        spi_write_blocking(dev->spi_port, txd, 2);
+	}
+
+    spi_read_blocking(dev->spi_port, 0, &value, 1);
+
+	rfmodule_2m70cm_cs(dev, 1);
+    return value;
+
+}
+
 i8 rfmodule_2m70cm_init(rfmodule_config_t *dev){
 
     //init CC1200 reset pin
