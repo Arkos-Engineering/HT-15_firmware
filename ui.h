@@ -22,13 +22,13 @@
 
 typedef enum{
         /* don't update the screen yet */
-        htui_pending,
+        htui_draw_command_mode_pending,
         /* deep clean the area in the command before writing data to the screen */
-        htui_deep_clean,
+        htui_draw_command_mode_deep_clean,
         /* completely wipe the screan before processing any commands. */
-        htui_full_deep_clean,
+        htui_draw_command_mode_full_deep_clean,
         /* submit and screen updates */
-        htui_finished,
+        htui_draw_command_mode_finished,
 } htui_display_draw_command_mode;
 
 typedef struct{
@@ -44,19 +44,19 @@ typedef struct{
 /* this is meant to be implementoud by the code using this module. this is called multiple times until the mode is set to finished. */
 HTUI_EXTERNAL_EXPORT bool8 htui_external_draw(htui_display_draw_command * command, void * p_user_state);
 
-
 /* basic font loading stuff, why because I want japanese on this radio. And i guess other languages are cool too. https://www.gnu.org/software/gettext/manual/html_node/index.html*/
 typedef struct {
         u8 * data;
-        u8 x, y, xoff, yoff;
+        u32 data_width, data_height;
+        u8 x, y, x2, y2;
 } htui_glyph;
 
 /* TODO these need to have a callback passed into them because they might unload the data
  * and the burden of holding onto the data should be on the ui library*/
-HTUI_EXTERNAL_EXPORT bool8 htui_external_list_font_files(fat_str ** out_fonts, u32 * out_fonts_size, void * user_state);
+HTUI_EXTERNAL_EXPORT bool8 htui_external_list_fonts(fat_str ** out_fonts, u32 * out_fonts_size, void * user_state);
 HTUI_EXTERNAL_EXPORT bool8 htui_external_list_code_points(fat_str const font, u8 ** out_code_points, u32 * out_code_points_size, void * user_state);
 /* TODO: add font size stuff.*/
-HTUI_EXTERNAL_EXPORT bool8 htui_external_load_glyph(fat_str const font, u32 code_point_index, htui_glyph ** out_glyph, void * user_state);
+HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_point_index, htui_glyph ** out_glyph, void * user_state);
 
 typedef enum{
         htui_component_state_error,
@@ -176,10 +176,14 @@ typedef struct{
         void * user_state;
         /*TODO as of Mar 11 2025: hold onto previous state for each component to tell if it needs to be re-rendered for its section of the screen. @Zea Lynn*/
 
+        fat_str current_font;
+
         u16 component_id;
+        u16 active_thing_id_stack[MAX_DRAW_COMMANDS];
+        u16 active_thing_id_size;
 
         u16 selected_component_id;
-        bool is_pressed;
+        bool8 is_pressed;
 
         htui_command  previous_commands[MAX_DRAW_COMMANDS];
         u32 previous_commands_size;
@@ -189,10 +193,10 @@ typedef struct{
 
 } htui_state;
 
-_HTUI_EXPORT void htui_initalize(htui_state * state);
+_HTUI_EXPORT void htui_initalize(u8 width, u8 height, htui_state * state, void * user_state);
 
 /*TODO as of March 11 2025: figure out how to only tell the paper display controller what parts of the buffer to re_render. @Zea Lynn*/
-_HTUI_EXPORT bool8 htui_end_and_render(htui_state * state, void * user_state);
+_HTUI_EXPORT bool8 htui_end_and_render(htui_state * state);
 
 /* renderes with a border and changes when selected, cannot have other pressables inside it*/
 _HTUI_EXPORT bool8 htui_add_component(htui_state * state, u32 * component_id, htui_component_info * info);
@@ -213,24 +217,31 @@ _HTUI_EXPORT bool8 htui_end(htui_state * state);
 /*TODO: have this sized based on some external macros also have it be a bitset*/
 u8 buffer[200*200] = {0};
 
-_HTUI_EXPORT void htui_initalize(htui_state * state);
+_HTUI_EXPORT void htui_initalize(u8 width, u8 height, htui_state * state, void * user_state){
+        memset(state, 0, sizeof(htui_state));
+        state->width = width;
+        state->height = height;
+        state->user_state = user_state;
+}
+
 _HTUI_EXPORT bool8 htui_begin(htui_state * state){
         state->commands_size = 0;
         return true;
 }
 
-_HTUI_EXPORT bool8 htui_end_and_render(htui_state * state, void * user_state){
+_HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
 
-        htui_display_draw_command command = { 50, 50, 100, 100, buffer, htui_full_deep_clean, };
+        htui_display_draw_command command = { 50, 50, 100, 100, buffer, htui_draw_command_mode_full_deep_clean, };
 
         u16 x, y;
 
         fat_str * fonts;
         u32 fonts_size;
-        htui_external_list_font_files(&fonts, &fonts_size, user_state);
+        htui_external_list_fonts(&fonts, &fonts_size, state->user_state);
+        if(fonts_size == 0) return 0;
 
         if(state->screen_state == htui_screen_state_unknown){
-                if(!htui_external_draw(&command, user_state)){ return 0; }
+                if(!htui_external_draw(&command, state->user_state)){ return 0; }
                 state->screen_state=htui_screen_state_dirty;
         }
         /* 
@@ -245,24 +256,57 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state, void * user_state){
         ifor(i, state->commands_size){
                 /* TODO: render a border and show when button is hovered.*/
                 if(state->commands[i].type == htui_command_type_button){
-                        u8 x_offset = 0;
+                        u8 y_offset = 0, x_offset = 0;
                         c_str text = state->commands[i].text;
                         ifor(t, state->commands[i].text_size){
                                 /*TODO: check code point exists in current font map. htui_external_list_code_points*/
-                                htui_glyph * temp_glyph;
-                                htui_external_load_glyph(current_font, text[t], &temp_glyph, state->user_state);
-                                x_offset = 
+                                htui_glyph * glyph;
+                                bool8 found_font_for_glyph = 0;
+
+                                ifor(f, fonts_size){
+                                        if(htui_external_get_glyph(fonts[f], text[t], &glyph, state->user_state)){
+                                                found_font_for_glyph = 1;
+                                                break;
+                                        }
+                                }
+                                /*TODO: log error and crash and core dump*/
+                                if(!found_font_for_glyph || !glyph) return 0;
+
+                                u16 glyph_width = glyph->x2 - glyph->x;
+                                u16 glyph_height = glyph->y2 - glyph->y;
+
+                                ifor(gy, glyph_height){
+                                        ifor(gx, glyph_width){
+                                                u32 glyph_data_buffer_index = (glyph->data_width * (gy + glyph->y)) + (gx + glyph->x);
+                                                u32 buffer_index = gy * glyph_width + gx;
+                                                buffer[buffer_index] = glyph->data[glyph_data_buffer_index];
+                                        }
+                                }
+
+                                // glyph->data
+
+                                command.x = x_offset;
+                                command.y = y_offset;
+                                command.mode = htui_draw_command_mode_finished;
+                                command.width = glyph_width;
+                                command.height = glyph_height;
+                                command.buffer = buffer;
+                                htui_external_draw(&command, state->user_state);
+                                x_offset += glyph_width;
+
                         }
+
+                        if(x_offset > state->width) command.width = state->width;
+                        else command.width = x_offset;
                 }
         }
 
-        
         /* TODO pointer to double buffer swap.*/
         state->previous_commands_size = state->commands_size;
         state->commands_size = 0;
 
-        command.mode = htui_finished;
-        if(!htui_external_draw(&command, user_state)){ return 0; }
+        command.mode = htui_draw_command_mode_finished;
+        if(!htui_external_draw(&command, state->user_state)){ return 0; }
 
         return 1;
 }
@@ -270,6 +314,7 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state, void * user_state){
 static bool8 _htui_push_back_command(htui_state * state, htui_command * command){
         if(state->commands_size+1 > MAX_DRAW_COMMANDS) return false;
         state->commands[state->commands_size] = *command;
+        state->commands_size += 1;
         return true;
 }
 
@@ -316,6 +361,13 @@ _HTUI_EXPORT htui_component_state htui_button(htui_state * state, u32 * componen
         return htui_component_state_success;
 }
 
+/* TODO: check that we are in an area here.*/
+_HTUI_EXPORT bool8 htui_end(htui_state * state){
+        htui_command command = {
+                .type = htui_command_type_end_area,
+        };
+        _htui_push_back_command(state, &command);
+}
 
 #endif /* HTUI_IMPLEMENTATION */
 #endif /* HTUI */
