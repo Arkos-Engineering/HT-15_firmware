@@ -830,7 +830,8 @@ int ssd1681_write_point(ssd1681_color_t color, uint8_t x, uint8_t y, uint8_t dat
     
     uint8_t *gram = (color == SSD1681_COLOR_BLACK) ? 
                     &g_ssd1681.black_gram[0][0] : &g_ssd1681.red_gram[0][0];
-    
+
+    //TODO: mod is slow make this just use bitshifting.
     uint16_t byte_index = (DISPLAY_HEIGHT - 1 - y) * BYTES_PER_ROW + (x / 8);
     uint8_t bit_index = 7 - (x % 8);
     
