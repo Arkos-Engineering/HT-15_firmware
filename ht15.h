@@ -48,8 +48,8 @@ HT15_EXPORT bool8 ht15_run(void);
 
 rfmodule_config_t rfmodule_config = {
     .spi_port = spi0,
-    .spi_pin_mosi = pin_rf_sclk,
-    .spi_pin_miso = pin_rf_sdi,
+    .spi_pin_mosi = pin_rf_sdi,
+    .spi_pin_miso = pin_rf_sdo,
     .spi_pin_sck = pin_rf_sclk,
     .spi_pin_cs = pin_rf_sel,
     .spi_baudrate = 10 * MHZ,
@@ -175,6 +175,34 @@ static void rf_init(){
     } else{
         printf("RF module initialized successfully!\n");
     }
+}
+
+static void rf_test(){
+    printf("rf test read: %X\n", rfmodule_2m70cm_read_register(&rfmodule_config, 0x01));
+    static bool8 keyed = 0;
+    if(keyed) return;
+
+    const u32 frequency_hz = 146 * MHZ;
+    const u32 cc1200_xosc_hz = 40 * MHZ;
+    const u32 cc1200_freq_word_scale = 1 << 16;
+    const u32 cc1200_2m_lo_divider = 24;
+    const u32 freq_word = (u32)((((u64)frequency_hz * cc1200_2m_lo_divider * cc1200_freq_word_scale) + (cc1200_xosc_hz / 2)) / cc1200_xosc_hz);
+
+    rfmodule_2m70cm_set_power_mode(&rfmodule_config, RFMODULE_2M70CM_POWER_MODE_ON);
+    rfmodule_2m70cm_write_cmd(&rfmodule_config, SIDLE);
+
+    rfmodule_2m70cm_write_register(&rfmodule_config, 0x20, 0x0B); /* FS_CFG: 136.7-160 MHz band, LO divider 24 */
+    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F0C, (freq_word >> 16) & 0xFF);
+    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F0D, (freq_word >> 8) & 0xFF);
+    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F0E, freq_word & 0xFF);
+    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F05, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
+
+    rfmodule_2m70cm_write_cmd(&rfmodule_config, SCAL);
+    sleep_ms(10);
+    rfmodule_2m70cm_write_cmd(&rfmodule_config, STX);
+
+    keyed = 1;
+    printf("RF test: keyed CW carrier on %lu Hz\n", (unsigned long)frequency_hz);
 }
 
 static void sd_init(){
@@ -580,6 +608,7 @@ HT15_EXPORT bool8 ht15_run(void){
 
         if(!(cycle & 63)){
         // if(cycle % 100 == 0){
+            rf_test();
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
             char channel_string[10];

@@ -100,17 +100,15 @@ u8 rfmodule_2m70cm_read_register(rfmodule_config_t *dev, u16 addr){
     u8 value = 0;
 
     rfmodule_2m70cm_set_cs(dev, 0);
-
     if(txd[0] == 0){
         spi_write_blocking(dev->spi_port, txd+1, 1);
 	}
     else{
         spi_write_blocking(dev->spi_port, txd, 2);
 	}
-
     spi_read_blocking(dev->spi_port, 0, &value, 1);
-
 	rfmodule_2m70cm_set_cs(dev, 1);
+
     return value;
 
 }
@@ -178,7 +176,7 @@ i8 rfmodule_2m70cm_hw_reset(rfmodule_config_t *dev){
     return 0;
 }
 
-void rfmodule_2m70cm_set_freq(rfmodule_config_t *dev, uint32_t freq){
+void rfmodule_2m70cm_set_frequency(rfmodule_config_t *dev, uint32_t freq){
 	rfmodule_2m70cm_write_cmd(dev, SIDLE);
 	sleep_ms(10);
 
