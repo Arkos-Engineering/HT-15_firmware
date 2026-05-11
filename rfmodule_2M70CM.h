@@ -6,51 +6,6 @@
 extern "C" {
 #endif
 
-typedef struct {
-    rfmodule_2m70cm_config_t config;
-    rfmodule_2m70cm_status_t state_status_byte; //cached copy of state byte read from CC1200, updated by sending commands or load_status_byte()
-    bool8 chip_ready; //cached copy of ready bit from CC1200 Chip Status Byte. 0 if chip is ready, 1 if power and crystal are still stabalizing. update by sending commands or load_status_byte()
-    bool8 is_keyed;
-} rfmodule_2m70cm_state_t;
-
-typedef struct {
-    spi_inst_t *spi_port;             /**< SPI port: spi0 or spi1 */
-    u8 spi_pin_mosi;             /**< MOSI pin */
-    u8 spi_pin_miso;             /**< MISO pin */
-    u8 spi_pin_sck;              /**< SCK pin */
-    u8 spi_pin_cs;               /**< CS pin */
-    u32 spi_baudrate;        /**< SPI clock frequency in Hz */
-    bool8 spi_shared;        /**< Whether the SPI bus is shared with other devices (e.g. display). if true, the SPI bus is expected to be initalized before use and will not be initialized by the RF module */
-
-    i2c_inst_t *i2c_port;         /**< I2C port: i2c0 or i2c1 */
-    u8 i2c_pin_sda;             /**< I2C SDA pin */
-    u8 i2c_pin_scl;             /**< I2C SCL pin */
-    u32 i2c_baudrate;        /**< I2C clock frequency in Hz */
-    bool8 i2c_shared;       /**< Whether the I2C pins are shared with other devices (e.g. audio amp) if true, the I2C bus is expected to be initalized before use and will not be initialized by the RF module */
-    
-    u8 pin_gpio0;           
-    u8 pin_gpio1;
-    u8 pin_gpio2;
-    u8 pin_gpio3;
-} rfmodule_2m70cm_config_t;
-
-typedef enum {
-    SRES = 0x30, /* Reset chip. */
-    SFSTXON,/* Enable and calibrate frequency synthesizer (if MCSM0.FS_AUTOCAL=1). */
-    SXOFF, /* Turn off crystal oscillator. */
-    SCAL, /* Calibrate frequency synthesizer and turn it off. */
-    SRX, /* Enable RX. Perform calibration first if coming from */
-    STX, /* Enable TX. Perform calibration first if coming from */
-    SIDLE, /* Exit RX / TX, turn off frequency synthesizer and exit Wake-On-Radio mode if applicable. */
-    SAFC, /* Perform AFC adjustment of the frequency synthesizer */
-    SWOR, /* Start automatic RX polling sequence (Wake-on-Radio) */
-    SPWD, /* Enter power down mode when CSn goes high. */
-    SFRX, /* Flush the RX FIFO buffer. Only issue SFRX in IDLE or RXFIFO_OVERFLOW states. */
-    SFTX, /* Flush the TX FIFO buffer. Only issue SFTX in IDLE or TXFIFO_UNDERFLOW states. */
-    SWORRST, /* Reset real time clock. Only issue SWORRST in IDLE state. */
-    SNOP /* No operation. May be used to get access to the chip status byte. */
-}rfmodule_2m70cm_cmd_strobe_t;
-
 typedef enum {
     STATE_IDLE = 0,
     STATE_RX = 1,
@@ -74,6 +29,52 @@ typedef enum {
     RFMODULE_2M70CM_POWER_MODE_ON = 1,
     RFMODULE_2M70CM_POWER_MODE_RX_ONLY = 2,
 } rfmodule_power_mode_t;
+
+typedef struct {
+    spi_inst_t *spi_port;             /**< SPI port: spi0 or spi1 */
+    u8 spi_pin_mosi;             /**< MOSI pin */
+    u8 spi_pin_miso;             /**< MISO pin */
+    u8 spi_pin_sck;              /**< SCK pin */
+    u8 spi_pin_cs;               /**< CS pin */
+    u32 spi_baudrate;        /**< SPI clock frequency in Hz */
+    bool8 spi_shared;        /**< Whether the SPI bus is shared with other devices (e.g. display). if true, the SPI bus is expected to be initalized before use and will not be initialized by the RF module */
+
+    i2c_inst_t *i2c_port;         /**< I2C port: i2c0 or i2c1 */
+    u8 i2c_pin_sda;             /**< I2C SDA pin */
+    u8 i2c_pin_scl;             /**< I2C SCL pin */
+    u32 i2c_baudrate;        /**< I2C clock frequency in Hz */
+    bool8 i2c_shared;       /**< Whether the I2C pins are shared with other devices (e.g. audio amp) if true, the I2C bus is expected to be initalized before use and will not be initialized by the RF module */
+    
+    u8 pin_gpio0;           
+    u8 pin_gpio1;
+    u8 pin_gpio2;
+    u8 pin_gpio3;
+} rfmodule_2m70cm_config_t;
+
+typedef struct {
+    rfmodule_2m70cm_config_t config;
+    rfmodule_2m70cm_status_t state_status_byte; //cached copy of state byte read from CC1200, updated by sending commands or load_status_byte()
+    bool8 chip_ready; //cached copy of ready bit from CC1200 Chip Status Byte. 0 if chip is ready, 1 if power and crystal are still stabalizing. update by sending commands or load_status_byte()
+    bool8 is_keyed;
+} rfmodule_2m70cm_state_t;
+
+typedef enum {
+    SRES = 0x30, /* Reset chip. */
+    SFSTXON,/* Enable and calibrate frequency synthesizer (if MCSM0.FS_AUTOCAL=1). */
+    SXOFF, /* Turn off crystal oscillator. */
+    SCAL, /* Calibrate frequency synthesizer and turn it off. */
+    SRX, /* Enable RX. Perform calibration first if coming from */
+    STX, /* Enable TX. Perform calibration first if coming from */
+    SIDLE, /* Exit RX / TX, turn off frequency synthesizer and exit Wake-On-Radio mode if applicable. */
+    SAFC, /* Perform AFC adjustment of the frequency synthesizer */
+    SWOR, /* Start automatic RX polling sequence (Wake-on-Radio) */
+    SPWD, /* Enter power down mode when CSn goes high. */
+    SFRX, /* Flush the RX FIFO buffer. Only issue SFRX in IDLE or RXFIFO_OVERFLOW states. */
+    SFTX, /* Flush the TX FIFO buffer. Only issue SFTX in IDLE or TXFIFO_UNDERFLOW states. */
+    SWORRST, /* Reset real time clock. Only issue SWORRST in IDLE state. */
+    SNOP /* No operation. May be used to get access to the chip status byte. */
+}rfmodule_2m70cm_cmd_strobe_t;
+
 
 u8 rfmodule_2m70cm_set_cs(rfmodule_2m70cm_state_t *dev, bool8 value);
 u8 rfmodule_2m70cm_write_cmd(rfmodule_2m70cm_state_t *dev, rfmodule_2m70cm_cmd_strobe_t addr);
