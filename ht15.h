@@ -46,26 +46,27 @@ HT15_EXPORT bool8 ht15_run(void);
 
 #include "quadrature_encoder.pio.h"
 
-bool8 rf_keyed = 0;
-rfmodule_config_t rfmodule_config = {
-    .spi_port = spi0,
-    .spi_pin_mosi = pin_rf_sdi,
-    .spi_pin_miso = pin_rf_sdo,
-    .spi_pin_sck = pin_rf_sclk,
-    .spi_pin_cs = pin_rf_sel,
-    .spi_baudrate = 7.5 * MHZ,
-    .spi_shared = false,
+rfmodule_2m70cm_state_t rfmodule_state = {
+    .config = {
+        .spi_port = spi0,
+        .spi_pin_mosi = pin_rf_sdi,
+        .spi_pin_miso = pin_rf_sdo,
+        .spi_pin_sck = pin_rf_sclk,
+        .spi_pin_cs = pin_rf_sel,
+        .spi_baudrate = 7.5 * MHZ,
+        .spi_shared = false,
 
-    .i2c_port = i2c1,
-    .i2c_pin_sda = pin_i2c1_sda,
-    .i2c_pin_scl = pin_i2c1_scl,
-    .i2c_baudrate = 100 * KHZ,
-    .i2c_shared = true,
+        .i2c_port = i2c1,
+        .i2c_pin_sda = pin_i2c1_sda,
+        .i2c_pin_scl = pin_i2c1_scl,
+        .i2c_baudrate = 100 * KHZ,
+        .i2c_shared = true,
 
-    .pin_gpio0 = pin_rf_gpio0,
-    .pin_gpio1 = pin_rf_gpio1,
-    .pin_gpio2 = pin_rf_gpio2,
-    .pin_gpio3 = pin_rf_gpio3,
+        .pin_gpio0 = pin_rf_gpio0,
+        .pin_gpio1 = pin_rf_gpio1,
+        .pin_gpio2 = pin_rf_gpio2,
+        .pin_gpio3 = pin_rf_gpio3,
+    },
 };
 
 const u8 button_sense_pin[] = {pin_buttonmatrix_0, pin_buttonmatrix_1, pin_buttonmatrix_2, pin_buttonmatrix_3, pin_buttonmatrix_4, pin_buttonmatrix_5};
@@ -170,7 +171,7 @@ static void spi1_force_select(spi1_device device){
 }
 
 static void rf_init(){
-    if(rfmodule_2m70cm_init(&rfmodule_config)!=0){
+    if(rfmodule_2m70cm_init(&rfmodule_state)!=0){
         printf("Error initializing RF module!\n");
         return;
     } else{
@@ -179,8 +180,8 @@ static void rf_init(){
 }
 
 static void rf_test(){
-    printf("rf test read: %X\n", rfmodule_2m70cm_read_register(&rfmodule_config, 0x01));
-    if(rf_keyed) return;
+    printf("rf test read: %X\n", rfmodule_2m70cm_read_register(&rfmodule_state, 0x01));
+    if(rfmodule_state.is_keyed) return;
 
     const u32 frequency_hz = 146 * MHZ;
     const u32 cc1200_xosc_hz = 40 * MHZ;
@@ -188,20 +189,20 @@ static void rf_test(){
     const u32 cc1200_2m_lo_divider = 24;
     const u32 freq_word = (u32)((((u64)frequency_hz * cc1200_2m_lo_divider * cc1200_freq_word_scale) + (cc1200_xosc_hz / 2)) / cc1200_xosc_hz);
 
-    rfmodule_2m70cm_set_power_mode(&rfmodule_config, RFMODULE_2M70CM_POWER_MODE_ON);
-    rfmodule_2m70cm_write_cmd(&rfmodule_config, SIDLE);
+    rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_ON);
+    rfmodule_2m70cm_write_cmd(&rfmodule_state, SIDLE);
 
-    rfmodule_2m70cm_write_register(&rfmodule_config, 0x20, 0x0B); /* FS_CFG: 136.7-160 MHz band, LO divider 24 */
-    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F0C, (freq_word >> 16) & 0xFF);
-    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F0D, (freq_word >> 8) & 0xFF);
-    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F0E, freq_word & 0xFF);
-    rfmodule_2m70cm_write_register(&rfmodule_config, 0x2F05, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
+    rfmodule_2m70cm_write_register(&rfmodule_state, 0x20, 0x0B); /* FS_CFG: 136.7-160 MHz band, LO divider 24 */
+    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F0C, (freq_word >> 16) & 0xFF);
+    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F0D, (freq_word >> 8) & 0xFF);
+    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F0E, freq_word & 0xFF);
+    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F05, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
 
-    rfmodule_2m70cm_write_cmd(&rfmodule_config, SCAL);
+    rfmodule_2m70cm_write_cmd(&rfmodule_state, SCAL);
     sleep_ms(10);
-    rfmodule_2m70cm_write_cmd(&rfmodule_config, STX);
+    rfmodule_2m70cm_write_cmd(&rfmodule_state, STX);
 
-    rf_keyed = 1;
+    rfmodule_state.is_keyed = 1;
     printf("RF test: keyed CW carrier on %lu Hz\n", (unsigned long)frequency_hz);
 }
 
