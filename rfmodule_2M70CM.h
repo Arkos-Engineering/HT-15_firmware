@@ -112,6 +112,29 @@ u8 rfmodule_2m70cm_read_register(rfmodule_config_t *dev, u16 addr){
     return value;
 
 }
+// C++ examples from CC1200.cpp for reference when implementing the above functions in case there are any nuances to the CC1200 SPI interface that need to be accounted for. Note that the CC1200 is the same RF IC used on the 2M70CM module, so the SPI interface should be the same.
+// uint8_t CC1200::readRegister(CC1200::Register reg)
+// {
+// 	spi.select();
+// 	loadStatusByte(spi.write(1<<7 | static_cast<uint8_t>(reg)));
+// 	uint8_t regValue = spi.write(0);
+// 	spi.deselect();
+// 	return regValue;
+// }
+// uint8_t CC1200::readRegister(CC1200::ExtRegister reg)
+// {
+// 	spi.select();
+// 	loadStatusByte(spi.write(1<<7 | 0x2F));
+// 	spi.write(static_cast<uint8_t>(reg));
+// 	uint8_t regValue = spi.write(0);
+// 	spi.deselect();
+// 	return regValue;
+// }
+// void CC1200::loadStatusByte(uint8_t status)
+// {
+// 	chipReady = !(status >> 7);
+// 	state = static_cast<State>((status >> 4) & 0x7);
+// }
 
 i8 rfmodule_2m70cm_init(rfmodule_config_t *dev){
 
