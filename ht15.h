@@ -46,13 +46,14 @@ HT15_EXPORT bool8 ht15_run(void);
 
 #include "quadrature_encoder.pio.h"
 
+bool8 rf_keyed = 0;
 rfmodule_config_t rfmodule_config = {
     .spi_port = spi0,
     .spi_pin_mosi = pin_rf_sdi,
     .spi_pin_miso = pin_rf_sdo,
     .spi_pin_sck = pin_rf_sclk,
     .spi_pin_cs = pin_rf_sel,
-    .spi_baudrate = 10 * MHZ,
+    .spi_baudrate = 7.5 * MHZ,
     .spi_shared = false,
 
     .i2c_port = i2c1,
@@ -179,8 +180,7 @@ static void rf_init(){
 
 static void rf_test(){
     printf("rf test read: %X\n", rfmodule_2m70cm_read_register(&rfmodule_config, 0x01));
-    static bool8 keyed = 0;
-    if(keyed) return;
+    if(rf_keyed) return;
 
     const u32 frequency_hz = 146 * MHZ;
     const u32 cc1200_xosc_hz = 40 * MHZ;
@@ -201,7 +201,7 @@ static void rf_test(){
     sleep_ms(10);
     rfmodule_2m70cm_write_cmd(&rfmodule_config, STX);
 
-    keyed = 1;
+    rf_keyed = 1;
     printf("RF test: keyed CW carrier on %lu Hz\n", (unsigned long)frequency_hz);
 }
 
