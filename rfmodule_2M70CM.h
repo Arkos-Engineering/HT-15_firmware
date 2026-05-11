@@ -153,13 +153,13 @@ u8 rfmodule_2m70cm_write_register(rfmodule_2m70cm_state_t *dev, u16 addr, u8 val
     rfmodule_2m70cm_set_cs(dev, 0);
     if(txd[0] == 0){ // standard register space
         txd[1] = 0<<7 | 0<<6 | (txd[1]&0x3F); /* clear read bit (7), clear burst bit (6) on first byte sent (address byte in this case)*/
-        spi_write_read_blocking(dev->config.spi_port, txd[1], unprocessed_status, 1); //write txd[1] (address). It's a read because this gives us the status byte to process later
+        spi_write_read_blocking(dev->config.spi_port, txd+1, &unprocessed_status, 1); //write txd[1] (address). It's a read because this gives us the status byte to process later
         spi_write_blocking(dev->config.spi_port, txd+2, 1); //write txd[2] (value)
 	}
     else{ //extended register space, needs extended address byte
         txd[0] = 0<<7 | 0<<6 | (txd[0]&0x3F); /* clear read bit (7), clear burst bit (6) on first byte sent (set extended address space byte in this case)*/
-        spi_write_read_blocking(dev->config.spi_port, txd[0], unprocessed_status, 1); //write txd[0] (trigger extended address space). it's a read because this gives us the status byte to process later
-        spi_write_blocking(dev->config.spi_port, txd+1, 3); //write txd[1] (address), and txd[2] (value)
+        spi_write_read_blocking(dev->config.spi_port, txd, &unprocessed_status, 1); //write txd[0] (trigger extended address space). it's a read because this gives us the status byte to process later
+        spi_write_blocking(dev->config.spi_port, txd+1, 2); //write txd[1] (address), and txd[2] (value)
 	}
 
     rfmodule_2m70cm_process_status_byte(dev, unprocessed_status);
@@ -176,11 +176,11 @@ u8 rfmodule_2m70cm_read_register(rfmodule_2m70cm_state_t *dev, u16 addr){
     rfmodule_2m70cm_set_cs(dev, 0);
     if(txd[0] == 0){
         txd[1] = 1<<7 | 0<<6 | (txd[1]&0x3F); /* set read bit (7), clear burst bit (6) on first byte sent (address byte in this case)*/
-        spi_write_read_blocking(dev->config.spi_port, txd[1], unprocessed_status, 1); //write txd[1] (address). It's a read because this gives us the status byte to process later
+        spi_write_read_blocking(dev->config.spi_port, txd+1, &unprocessed_status, 1); //write txd[1] (address). It's a read because this gives us the status byte to process later
 	}
     else{
         txd[0] = 1<<7 | 0<<6 | (txd[0]&0x3F); /* set read bit (7), clear burst bit (6) on first byte sent (set extended address space byte in this case)*/
-        spi_write_read_blocking(dev->config.spi_port, txd[0], unprocessed_status, 1); //write txd[0] (trigger extended address space). it's a read because this gives us the status byte to process later
+        spi_write_read_blocking(dev->config.spi_port, txd, &unprocessed_status, 1); //write txd[0] (trigger extended address space). it's a read because this gives us the status byte to process later
         spi_write_blocking(dev->config.spi_port, txd+1, 1); //write txd[1] (address)
 	}
 
