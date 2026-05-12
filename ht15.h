@@ -53,7 +53,7 @@ rfmodule_2m70cm_state_t rfmodule_state = {
         .spi_pin_miso = pin_rf_sdo,
         .spi_pin_sck = pin_rf_sclk,
         .spi_pin_cs = pin_rf_sel,
-        .spi_baudrate = 7.5 * MHZ,
+        .spi_baudrate = 5 * MHZ,
         .spi_shared = false,
 
         .i2c_port = i2c1,
@@ -179,10 +179,11 @@ static void rf_init(){
     }
 }
 
-static void rf_test(u64 frequency_hz, bool8 state){
+static void rf_test(u64 frequency_hz, bool8 amp_enable, bool8 state){
     printf("rf part/version: %02X / state %u\n",
         rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_PARTVERSION),
         rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_MARCSTATE));
+    sleep_ms(10);
 
     if(state==rfmodule_state.is_keyed){
         return;
@@ -197,7 +198,11 @@ static void rf_test(u64 frequency_hz, bool8 state){
     }
 
     rfmodule_2m70cm_write_cmd(&rfmodule_state, SIDLE);
-    rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_ON);
+    if(amp_enable){
+        rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_ON);
+    } else{
+        rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_OFF);
+    }
     rfmodule_2m70cm_set_frequency(&rfmodule_state, frequency_hz);
     rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_MDMCFG2, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
     rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, 0x00); /* centered CW carrier */
@@ -618,7 +623,6 @@ HT15_EXPORT bool8 ht15_run(void){
 
         if(!(cycle & 63)){
         // if(cycle % 100 == 0){
-            rf_test(439*MHZ, key_states[key_ptt] == key_state_pressed);
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
             char channel_string[10];
@@ -640,6 +644,7 @@ HT15_EXPORT bool8 ht15_run(void){
             
         }
 
+        rf_test(439*MHZ, false, key_states[key_ptt] == key_state_pressed);
         gpio_put(pin_led_status, led_status_value);
         cycle += 1;
 
