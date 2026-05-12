@@ -181,7 +181,8 @@ static void rf_init(){
 }
 
 static void rf_test(u64 frequency_hz, bool8 amp_enable, bool8 state){
-    rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, get_rand_32() & 0xFF); /* random data */
+    // rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, get_rand_32() & 0xFF); /* random data */
+    rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, get_rand_32()&0xFF);
     // printf("rf part/version: %02X / state %u\n",
     //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_PARTVERSION),
     //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_MARCSTATE));
@@ -192,24 +193,25 @@ static void rf_test(u64 frequency_hz, bool8 amp_enable, bool8 state){
 
     if(!state){
         printf("RF test: turning off carrier\n");
-        rfmodule_2m70cm_write_cmd(&rfmodule_state, SIDLE);
+        rfmodule_2m70cm_write_cmd(&rfmodule_state, CC1200_CMD_SIDLE);
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_RX_ONLY);
         rfmodule_state.is_keyed = 0;
         return;
     }
 
-    rfmodule_2m70cm_write_cmd(&rfmodule_state, SIDLE);
+    rfmodule_2m70cm_write_cmd(&rfmodule_state, CC1200_CMD_SIDLE);
     if(amp_enable){
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_ON);
     } else{
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_OFF);
     }
-    printf("TX Bandwidth set: %i\n", rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(12.5*KHZ)));
+    rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
+    rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(25*KHZ));
     rfmodule_2m70cm_set_frequency(&rfmodule_state, frequency_hz);
-    rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_MDMCFG2, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
+    // rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_MDMCFG2, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
     // rfmodule_3m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, 0); /* write data to be centered CW carrier */
     sleep_ms(1);
-    rfmodule_2m70cm_write_cmd(&rfmodule_state, STX);
+    rfmodule_2m70cm_write_cmd(&rfmodule_state, CC1200_CMD_STX);
 
     rfmodule_state.is_keyed = 1;
     return;

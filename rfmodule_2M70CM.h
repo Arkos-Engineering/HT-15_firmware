@@ -16,13 +16,15 @@ typedef enum {
     STATE_SETTLING = 5,
     STATE_RXFIFO_OVERFLOW = 6,
     STATE_TXFIFO_UNDERFLOW = 7
-} rfmodule_2m70cm_status_t;
+} cc1200_status_t;
 
 typedef enum {
-    RFMODULE_2M70CM_ERROR_NONE = 0,
-    RFMODULE_2M_70CM_MISSING_MODULE = -1,
-    RFMODULE_2M70CM_ERROR_INVALID_PARAM = -2,
-    RFMODULE_2M70CM_ERROR_INIT_FAILED = -3,
+    RFMODULE_ERROR_SUCCESS,
+    RFMODULE_MISSING_MODULE,
+    RFMODULE_ERROR_INVALID_PARAM,
+    RFMODULE_ERROR_UNSUPPORTED,
+    RFMODULE_ERROR_UNIMPLEMENTED,
+    RFMODULE_ERROR_INIT_FAILED
 } rfmodule_error_code_t;
 
 typedef enum {
@@ -32,16 +34,16 @@ typedef enum {
 } rfmodule_power_mode_t;
 
 typedef enum {
-    RFMODULE_2M70CM_RF_MODE_NONE,
-    RFMODULE_2M70CM_RF_MODE_FM,
-    RFMODULE_2M70CM_RF_MODE_CW,
-    RFMODULE_2M70CM_RF_MODE_AM,
-    RFMODULE_2M70CM_RF_MODE_2GFSK,
-    RFMODULE_2M70CM_RF_MODE_2GMSK,
-    RFMODULE_2M70CM_RF_MODE_4GFSK,
-    RFMODULE_2M70CM_RF_MODE_4GMSK,
-    RFMODULE_2M70CM_RF_MODE_LORA
-} rfmodule_rf_mode_t;
+    RFMODULE_MODULATION_NONE,
+    RFMODULE_MODULATION_FM,
+    RFMODULE_MODULATION_CW,
+    RFMODULE_MODULATION_AM,
+    RFMODULE_MODULATION_2GFSK,
+    RFMODULE_MODULATION_2GMSK,
+    RFMODULE_MODULATION_4GFSK,
+    RFMODULE_MODULATION_4GMSK,
+    RFMODULE_MODULATION_LORA
+} rfmodule_modulation_t;
 
 typedef struct {
     spi_inst_t *spi_port;             /**< SPI port: spi0 or spi1 */
@@ -66,27 +68,30 @@ typedef struct {
 
 typedef struct {
     rfmodule_2m70cm_config_t config;
-    rfmodule_2m70cm_status_t state_status_byte; //cached copy of state byte read from CC1200, updated by sending commands or load_status_byte()
+    cc1200_status_t state_status_byte; //cached copy of state byte read from CC1200, updated by sending commands or load_status_byte()
     bool8 chip_ready; //cached copy of ready bit from CC1200 Chip Status Byte. 0 if chip is ready, 1 if power and crystal are still stabalizing. update by sending commands or load_status_byte()
     bool8 is_keyed;
-    rfmodule_rf_mode_t current_rf_mode;
+    rfmodule_modulation_t current_modulation;
+    rfmodule_power_mode_t current_power_mode;
+    u32 current_frequency;
+    u32 current_bw;
 } rfmodule_2m70cm_state_t;
 
 typedef enum {
-    SRES = 0x30, /* Reset chip. */
-    SFSTXON,/* Enable and calibrate frequency synthesizer (if MCSM0.FS_AUTOCAL=1). */
-    SXOFF, /* Turn off crystal oscillator. */
-    SCAL, /* Calibrate frequency synthesizer and turn it off. */
-    SRX, /* Enable RX. Perform calibration first if coming from */
-    STX, /* Enable TX. Perform calibration first if coming from */
-    SIDLE, /* Exit RX / TX, turn off frequency synthesizer and exit Wake-On-Radio mode if applicable. */
-    SAFC, /* Perform AFC adjustment of the frequency synthesizer */
-    SWOR, /* Start automatic RX polling sequence (Wake-on-Radio) */
-    SPWD, /* Enter power down mode when CSn goes high. */
-    SFRX, /* Flush the RX FIFO buffer. Only issue SFRX in IDLE or RXFIFO_OVERFLOW states. */
-    SFTX, /* Flush the TX FIFO buffer. Only issue SFTX in IDLE or TXFIFO_UNDERFLOW states. */
-    SWORRST, /* Reset real time clock. Only issue SWORRST in IDLE state. */
-    SNOP /* No operation. May be used to get access to the chip status byte. */
+    CC1200_CMD_SRES = 0x30, /* Reset chip. */
+    CC1200_CMD_SFSTXON,/* Enable and calibrate frequency synthesizer (if MCSM0.FS_AUTOCAL=1). */
+    CC1200_CMD_SXOFF, /* Turn off crystal oscillator. */
+    CC1200_CMD_SCAL, /* Calibrate frequency synthesizer and turn it off. */
+    CC1200_CMD_SRX, /* Enable RX. Perform calibration first if coming from */
+    CC1200_CMD_STX, /* Enable TX. Perform calibration first if coming from */
+    CC1200_CMD_SIDLE, /* Exit RX / TX, turn off frequency synthesizer and exit Wake-On-Radio mode if applicable. */
+    CC1200_CMD_SAFC, /* Perform AFC adjustment of the frequency synthesizer */
+    CC1200_CMD_SWOR, /* Start automatic RX polling sequence (Wake-on-Radio) */
+    CC1200_CMD_SPWD, /* Enter power down mode when CSn goes high. */
+    CC1200_CMD_SFRX, /* Flush the RX FIFO buffer. Only issue SFRX in IDLE or RXFIFO_OVERFLOW states. */
+    CC1200_CMD_SFTX, /* Flush the TX FIFO buffer. Only issue SFTX in IDLE or TXFIFO_UNDERFLOW states. */
+    CC1200_CMD_SWORRST, /* Reset real time clock. Only issue SWORRST in IDLE state. */
+    CC1200_CMD_SNOP /* No operation. May be used to get access to the chip status byte. */
 }rfmodule_2m70cm_cmd_strobe_t;
 
 // CC1200 register addresses. This is AI generated. Verify against datasheet if any issues arise
@@ -312,8 +317,11 @@ u8 rfmodule_2m70cm_read_register(rfmodule_2m70cm_state_t *dev, u16 addr);
 i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_set_power_mode(rfmodule_2m70cm_state_t *dev, rfmodule_power_mode_t mode);
+rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *dev, rfmodule_modulation_t modulation);
+rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data);
 bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
 u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz);
+
 
 
 
@@ -506,6 +514,7 @@ i8 rfmodule_2m70cm_set_power_mode(rfmodule_2m70cm_state_t *dev, rfmodule_power_m
         default:
             return -1; /* invalid mode */
     }
+    dev->current_power_mode = mode;
     return 0;
 }
 
@@ -515,6 +524,33 @@ i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev){
     gpio_put(dev->config.pin_gpio0, 1); /* deassert reset */
     sleep_ms(10);
     return 0;
+}
+
+rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *dev, rfmodule_modulation_t modulation){
+    rfmodule_2m70cm_write_cmd(dev, CC1200_CMD_SIDLE);
+    
+    if(modulation == RFMODULE_MODULATION_FM ||
+    modulation == RFMODULE_MODULATION_CW){
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_MDMCFG2, 0x01); /* Enter "CFM" Mode*/
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_CFM_TX_DATA_IN, 0); /* write data to be centered CW carrier */
+        dev->current_modulation = modulation;
+        return RFMODULE_ERROR_SUCCESS;
+
+    }
+
+    if(modulation == RFMODULE_MODULATION_NONE || 
+    modulation == RFMODULE_MODULATION_AM || 
+    modulation == RFMODULE_MODULATION_2GFSK || 
+    modulation == RFMODULE_MODULATION_2GMSK || 
+    modulation == RFMODULE_MODULATION_4GFSK || 
+    modulation == RFMODULE_MODULATION_4GMSK ){
+        return RFMODULE_ERROR_UNIMPLEMENTED;
+    } else {
+        return RFMODULE_ERROR_UNSUPPORTED;
+    }
+    
+
+
 }
 
 bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 freq){
@@ -546,7 +582,7 @@ bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 freq){
         return false;
     }
 
-    rfmodule_2m70cm_write_cmd(dev, SIDLE);
+    rfmodule_2m70cm_write_cmd(dev, CC1200_CMD_SIDLE);
     sleep_us(100);
 
     {
@@ -590,12 +626,14 @@ bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 freq){
         rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ1, (freq_word >> 8) & 0xFF);
         rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ0, freq_word & 0xFF);
     }
+    dev->current_frequency = freq;
     return true;
 }
 
 u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz){
+    rfmodule_2m70cm_write_cmd(dev, CC1200_CMD_SIDLE);
     
-    if(dev->current_rf_mode == RFMODULE_2M70CM_RF_MODE_FM){ // for some reason CFM mode doubles the bandwidth, so we have to set the target to half
+    if(dev->current_modulation == RFMODULE_MODULATION_FM){ // for some reason CFM mode doubles the bandwidth, so we have to set the target to half
         bandwidth_hz /= 2;
     }
     //TX bandwidth
@@ -655,10 +693,24 @@ u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz){
     rfmodule_2m70cm_write_register(dev, CC1200_REG_MODCFG_DEV_E, reg_modcfg_dev_e);
     rfmodule_2m70cm_write_register(dev, CC1200_REG_DEVIATION_M, dev_m & 0xFF);
 
-    if(dev->current_rf_mode == RFMODULE_2M70CM_RF_MODE_FM){ // for some reason CFM mode doubles the bandwidth, so we set the target to half and double the reported output
+    dev->current_bw = bandwidth_hz;
+
+    if(dev->current_modulation == RFMODULE_MODULATION_FM){ // for some reason CFM mode doubles the bandwidth, so we set the target to half and double the reported output
         return actual_bandwidth*2;
     }
     return actual_bandwidth;
+}
+
+rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data){
+    if(dev->current_modulation == RFMODULE_MODULATION_FM){
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_CFM_TX_DATA_IN, data); /* random data */
+        return RFMODULE_ERROR_SUCCESS;
+    }
+    if(dev->current_modulation == RFMODULE_MODULATION_CW){
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_CFM_TX_DATA_IN, 0); /*zero cause CW duh*/
+        return RFMODULE_ERROR_SUCCESS;
+    }
+    return RFMODULE_ERROR_UNIMPLEMENTED;
 }
 
 #endif /* HT15_RFMODULE_2M70CM_IMPLEMENTATION */
