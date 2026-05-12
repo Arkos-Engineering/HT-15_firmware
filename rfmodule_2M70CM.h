@@ -306,12 +306,8 @@ void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_h
 #if defined(RFMODULE_2M70CM_IMPLEMENTATION)
 
 void _rfmodule_2m70cm_process_status_byte(rfmodule_2m70cm_state_t *dev, u8 status){
-    if(status && 1<<7){
-        dev->chip_ready = true;
-    } else{
-        dev->chip_ready = false;
-    }
-	dev->state_status_byte = ((status >> 4) & 0x7);
+    dev->chip_ready = ((status & (1 << 7)) == 0);
+    dev->state_status_byte = ((status >> 4) & 0x7);
 }
 
 // SPI chip select 
@@ -359,9 +355,12 @@ i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev){
 
 
 u8 rfmodule_2m70cm_write_cmd(rfmodule_2m70cm_state_t *dev, rfmodule_2m70cm_cmd_strobe_t addr){
+    u8 unprocessed_status = 0;
     _rfmodule_2m70cm_set_cs(dev, 0);
-    spi_write_blocking(dev->config.spi_port, &addr, 1);
+    spi_write_read_blocking(dev->config.spi_port, &addr, &unprocessed_status, 1);
     _rfmodule_2m70cm_set_cs(dev, 1);
+    _rfmodule_2m70cm_process_status_byte(dev, unprocessed_status);
+    return unprocessed_status;
 }
 
 u8 rfmodule_2m70cm_write_register(rfmodule_2m70cm_state_t *dev, u16 addr, u8 value){
@@ -535,9 +534,40 @@ void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, uint32_t freq){
     sleep_us(100);
 
     {
-        u8 current_fs_cfg = rfmodule_2m70cm_read_register(dev, CC1200_REG_FS_CFG);
-        u8 next_fs_cfg = (current_fs_cfg & 0xF0) | fs_cfg_bandselect;
         u32 freq_word = (u32)((((u64)freq * lo_divider * cc1200_freq_word_scale) + (cc1200_xosc_hz / 2)) / cc1200_xosc_hz);
+        u8 next_fs_cfg = 0x10 | fs_cfg_bandselect; /* enable lock indicator and select synth band */
+
+        /* Common synth settings taken from the working CC1200 reference driver in docs_resources. */
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_IF_ADC1,        0xEE);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_IF_ADC0,        0x10);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DIG1,        0x04);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_CAL1,        0x40);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_CAL0,        0x0E);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DIVTWO,      0x03);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DSM0,        0x33);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DVC1,        0xF7);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_PFD,         0x00);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_PRE,         0x6E);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_REG_DIV_CML, 0x1C);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_SPARE,       0xAC);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_VCO0,        0xB5);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_XOSC5,          0x0E);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_XOSC1,          0x03);
+
+        if(lo_divider == 4){
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DIG0, 0x55);
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DVC0, 0x17);
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_IFAMP,   0x09);
+        } else if(lo_divider == 8){
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DIG0, 0xA3);
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DVC0, 0x0F);
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_IFAMP,   0x0D);
+        } else {
+            /* Reference code uses the 164-192 MHz values as a fallback for lower bands. */
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DIG0, 0x50);
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_DVC0, 0x0F);
+            rfmodule_2m70cm_write_register(dev, CC1200_REG_IFAMP,   0x0D);
+        }
 
         rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_CFG, next_fs_cfg);
         rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ2, (freq_word >> 16) & 0xFF);
