@@ -27,6 +27,7 @@ HT15_EXPORT bool8 ht15_run(void);
 #include <pico.h>
 #include <pico/stdlib.h>
 #include "pico/multicore.h"
+#include "pico/rand.h"
 #include "hardware/adc.h"
 #include "hardware/spi.h"
 #include "hardware/i2c.h"
@@ -180,10 +181,10 @@ static void rf_init(){
 }
 
 static void rf_test(u64 frequency_hz, bool8 amp_enable, bool8 state){
-    printf("rf part/version: %02X / state %u\n",
-        rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_PARTVERSION),
-        rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_MARCSTATE));
-    sleep_ms(10);
+    rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, get_rand_32() & 0xFF); /* random data */
+    // printf("rf part/version: %02X / state %u\n",
+    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_PARTVERSION),
+    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_MARCSTATE));
 
     if(state==rfmodule_state.is_keyed){
         return;
@@ -203,23 +204,14 @@ static void rf_test(u64 frequency_hz, bool8 amp_enable, bool8 state){
     } else{
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_OFF);
     }
+    printf("TX Bandwidth set: %i\n", rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(12.5*KHZ)));
     rfmodule_2m70cm_set_frequency(&rfmodule_state, frequency_hz);
     rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_MDMCFG2, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
-    rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, 0x00); /* centered CW carrier */
-    rfmodule_2m70cm_write_cmd(&rfmodule_state, SCAL);
-    // sleep_ms(2);
+    // rfmodule_3m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, 0); /* write data to be centered CW carrier */
     sleep_ms(1);
     rfmodule_2m70cm_write_cmd(&rfmodule_state, STX);
 
     rfmodule_state.is_keyed = 1;
-    // printf("RF test: keyed CW carrier on %lu Hz, MARCSTATE=%u FSCAL_CTRL=%02X FS_CFG=%02X FREQ=%02X %02X %02X\n",
-    //     (unsigned long)frequency_hz,
-    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_MARCSTATE),
-    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_FSCAL_CTRL),
-    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_FS_CFG),
-    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_FREQ2),
-    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_FREQ1),
-    //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_FREQ0));
     return;
 }
 

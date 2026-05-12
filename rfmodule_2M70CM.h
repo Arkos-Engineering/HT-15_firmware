@@ -6,6 +6,7 @@
 extern "C" {
 #endif
 
+
 typedef enum {
     STATE_IDLE = 0,
     STATE_RX = 1,
@@ -29,6 +30,18 @@ typedef enum {
     RFMODULE_2M70CM_POWER_MODE_ON = 1,
     RFMODULE_2M70CM_POWER_MODE_RX_ONLY = 2,
 } rfmodule_power_mode_t;
+
+typedef enum {
+    RFMODULE_2M70CM_RF_MODE_NONE,
+    RFMODULE_2M70CM_RF_MODE_FM,
+    RFMODULE_2M70CM_RF_MODE_CW,
+    RFMODULE_2M70CM_RF_MODE_AM,
+    RFMODULE_2M70CM_RF_MODE_2GFSK,
+    RFMODULE_2M70CM_RF_MODE_2GMSK,
+    RFMODULE_2M70CM_RF_MODE_4GFSK,
+    RFMODULE_2M70CM_RF_MODE_4GMSK,
+    RFMODULE_2M70CM_RF_MODE_LORA
+} rfmodule_rf_mode_t;
 
 typedef struct {
     spi_inst_t *spi_port;             /**< SPI port: spi0 or spi1 */
@@ -56,6 +69,7 @@ typedef struct {
     rfmodule_2m70cm_status_t state_status_byte; //cached copy of state byte read from CC1200, updated by sending commands or load_status_byte()
     bool8 chip_ready; //cached copy of ready bit from CC1200 Chip Status Byte. 0 if chip is ready, 1 if power and crystal are still stabalizing. update by sending commands or load_status_byte()
     bool8 is_keyed;
+    rfmodule_rf_mode_t current_rf_mode;
 } rfmodule_2m70cm_state_t;
 
 typedef enum {
@@ -298,12 +312,14 @@ u8 rfmodule_2m70cm_read_register(rfmodule_2m70cm_state_t *dev, u16 addr);
 i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_set_power_mode(rfmodule_2m70cm_state_t *dev, rfmodule_power_mode_t mode);
-void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
+bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
+u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz);
 
 
 
 
 #if defined(RFMODULE_2M70CM_IMPLEMENTATION)
+#define F_XOSC 40*MHZ
 
 void _rfmodule_2m70cm_process_status_byte(rfmodule_2m70cm_state_t *dev, u8 status){
     dev->chip_ready = ((status & (1 << 7)) == 0);
@@ -501,8 +517,8 @@ i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev){
     return 0;
 }
 
-void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, uint32_t freq){
-    static const u32 cc1200_xosc_hz = 40 * MHZ;
+bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 freq){
+    static const u32 cc1200_xosc_hz = F_XOSC;
     static const u32 cc1200_freq_word_scale = 1 << 16;
 
     u8 fs_cfg_bandselect = 0;
@@ -520,14 +536,14 @@ void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, uint32_t freq){
     } else if(freq >= 205 * MHZ && freq <= 240 * MHZ){
         fs_cfg_bandselect = 0x08;
         lo_divider = 16;
-    } else if(freq >= 164 * MHZ && freq <= 192 * MHZ){
+    } else if(freq >= 162 * MHZ && freq <= 192 * MHZ){
         fs_cfg_bandselect = 0x0A;
         lo_divider = 20;
-    } else if(freq >= 136700 * KHZ && freq <= 160 * MHZ){
+    } else if(freq >= 136700 * KHZ && freq <= 162 * MHZ){
         fs_cfg_bandselect = 0x0B;
         lo_divider = 24;
     } else{
-        return;
+        return false;
     }
 
     rfmodule_2m70cm_write_cmd(dev, SIDLE);
@@ -574,6 +590,75 @@ void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, uint32_t freq){
         rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ1, (freq_word >> 8) & 0xFF);
         rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ0, freq_word & 0xFF);
     }
+    return true;
+}
+
+u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz){
+    
+    if(dev->current_rf_mode == RFMODULE_2M70CM_RF_MODE_FM){ // for some reason CFM mode doubles the bandwidth, so we have to set the target to half
+        bandwidth_hz /= 2;
+    }
+    //TX bandwidth
+    /** Formulas:
+     * f_dev = (F_XOSC/2^21)*DEV_M //if DEV_E = 0
+     * f_dev = (F_XOSC/2^22)*(256+DEV_M)*(2^DEV_E) //if DEV_E > 0
+     * 
+     * DEV_E is u3, Least significant 3 bits of the MODCFG_DEV_E register.
+     * DEV_M is u8, the DEVIATION_M register.
+     * 
+     * for FM (CFM in the datasheet):
+     * f_OFFSET = ((f_dev*CFM_TX_DATA)/64) // where CFM_TX_DATA is the data to transmit written as an 8-bit floating point number to the CFM_TX_DATA register.
+     */
+
+    u64 dev_m = 0; // only an 8 bit value but use 64 so we can clamp before writing
+    u8 dev_e = 0;
+    u32 actual_bandwidth = 0;
+    const u64 xosc_hz = F_XOSC;
+    const u64 dev_e0_divisor = 1ULL << 21;
+    const u64 dev_e_nonzero_divisor = 1ULL << 22;
+
+    if(bandwidth_hz <= ((xosc_hz * 255ULL) / dev_e0_divisor)){ // max bandwidth for formula where DEV_E = 0
+        dev_e = 0;
+        dev_m = (((u64)bandwidth_hz * dev_e0_divisor) + (xosc_hz / 2ULL)) / xosc_hz;
+        if(dev_m > 255ULL){
+            dev_m = 255ULL;
+        }
+        actual_bandwidth = (u32)((xosc_hz * dev_m) / dev_e0_divisor);
+
+    } else { //for when DEV_E has to be greater than 0
+        u64 max_bw_if_dev_m_max = 0;
+        for(u8 i=1; i<8; i++){ // find dev_e iteratively, faster than the logarithm math (probably)
+            max_bw_if_dev_m_max = (xosc_hz * (256ULL + 255ULL) * (1ULL << i)) / dev_e_nonzero_divisor; // assume dev_m is max and then check if the current dev_e=i puts bandwidth_hz in range
+            if(bandwidth_hz <= max_bw_if_dev_m_max){
+                dev_e = i;
+                break;
+            }
+        }
+        if(dev_e == 0){
+            dev_e = 7; // assume max if we couldnt find a suitable value
+        }
+        u64 dev_m_with_offset = (((u64)bandwidth_hz * dev_e_nonzero_divisor) + ((xosc_hz * (1ULL << dev_e)) / 2ULL)) / (xosc_hz * (1ULL << dev_e));
+        if(dev_m_with_offset < 256ULL){
+            dev_m = 0ULL;
+        } else if(dev_m_with_offset > 511ULL){
+            dev_m = 255ULL;
+        } else {
+            dev_m = dev_m_with_offset - 256ULL;
+        }
+        actual_bandwidth = (u32)((xosc_hz * (256ULL + dev_m) * (1ULL << dev_e)) / dev_e_nonzero_divisor);
+    }
+
+    u8 reg_modcfg_dev_e = rfmodule_2m70cm_read_register(dev, CC1200_REG_MODCFG_DEV_E) & 0b11111000; // keep most significant 5 bits
+    reg_modcfg_dev_e |= (dev_e & 0b111); // write dev_e to last 3 bits
+
+    //write TX bandwidth values
+    rfmodule_2m70cm_write_register(dev, CC1200_REG_MODCFG_DEV_E, reg_modcfg_dev_e);
+    rfmodule_2m70cm_write_register(dev, CC1200_REG_DEVIATION_M, dev_m & 0xFF);
+
+    if(dev->current_rf_mode == RFMODULE_2M70CM_RF_MODE_FM){ // for some reason CFM mode doubles the bandwidth, so we set the target to half and double the reported output
+        return actual_bandwidth*2;
+    }
+    return actual_bandwidth;
 }
 
 #endif /* HT15_RFMODULE_2M70CM_IMPLEMENTATION */
