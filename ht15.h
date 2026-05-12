@@ -179,27 +179,29 @@ static void rf_init(){
     }
 }
 
-static void rf_test(){
-    printf("rf test read: %X\n", rfmodule_2m70cm_read_register(&rfmodule_state, 0x01));
-    if(rfmodule_state.is_keyed) return;
+static void rf_test(u64 frequency_hz, bool8 state){
+    printf("rf test read: %X\n", rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_PARTVERSION));
 
-    const u32 frequency_hz = 146 * MHZ;
-    const u32 cc1200_xosc_hz = 40 * MHZ;
-    const u32 cc1200_freq_word_scale = 1 << 16;
-    const u32 cc1200_2m_lo_divider = 24;
-    const u32 freq_word = (u32)((((u64)frequency_hz * cc1200_2m_lo_divider * cc1200_freq_word_scale) + (cc1200_xosc_hz / 2)) / cc1200_xosc_hz);
+    if(state==rfmodule_state.is_keyed){
+        return;
+    }
 
-    rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_ON);
+    if(!state){
+        printf("RF test: turning off carrier\n");
+        rfmodule_2m70cm_write_cmd(&rfmodule_state, SIDLE);
+        rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_RX_ONLY);
+        rfmodule_state.is_keyed = 0;
+        return;
+    }
+
     rfmodule_2m70cm_write_cmd(&rfmodule_state, SIDLE);
 
-    rfmodule_2m70cm_write_register(&rfmodule_state, 0x20, 0x0B); /* FS_CFG: 136.7-160 MHz band, LO divider 24 */
-    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F0C, (freq_word >> 16) & 0xFF);
-    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F0D, (freq_word >> 8) & 0xFF);
-    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F0E, freq_word & 0xFF);
-    rfmodule_2m70cm_write_register(&rfmodule_state, 0x2F05, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
+    rfmodule_2m70cm_set_frequency(&rfmodule_state, frequency_hz);
+    rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_MDMCFG2, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
 
-    rfmodule_2m70cm_write_cmd(&rfmodule_state, SCAL);
-    sleep_ms(10);
+    // rfmodule_2m70cm_write_cmd(&rfmodule_state, SCAL);
+    rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_ON);
+    sleep_ms(1);
     rfmodule_2m70cm_write_cmd(&rfmodule_state, STX);
 
     rfmodule_state.is_keyed = 1;
@@ -594,7 +596,7 @@ HT15_EXPORT bool8 ht15_run(void){
             any_key_held |= key_states[key] == key_state_repeat;
             any_key_pressed |= key_states[key] == key_state_pressed;
             if(key == key_ptt && key_states[key] == key_state_pressed){
-                i2c1_scan_bus();
+                // i2c1_scan_bus();
             }
             if(key == key_enter && key_states[key] == key_state_pressed){
                 should_clean_display = 1;
@@ -609,7 +611,7 @@ HT15_EXPORT bool8 ht15_run(void){
 
         if(!(cycle & 63)){
         // if(cycle % 100 == 0){
-            rf_test();
+            rf_test(146*MHZ, key_states[key_ptt] == key_state_pressed);
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
             char channel_string[10];

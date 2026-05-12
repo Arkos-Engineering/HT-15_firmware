@@ -75,6 +75,7 @@ typedef enum {
     SNOP /* No operation. May be used to get access to the chip status byte. */
 }rfmodule_2m70cm_cmd_strobe_t;
 
+// CC1200 register addresses. This is AI generated. Verify against datasheet if any issues arise
 typedef enum {
     /* normal register space */
     CC1200_REG_IOCFG3           = 0x0000,
@@ -291,7 +292,6 @@ typedef enum {
 } cc1200_reg_t;
 
 
-u8 rfmodule_2m70cm_set_cs(rfmodule_2m70cm_state_t *dev, bool8 value);
 u8 rfmodule_2m70cm_write_cmd(rfmodule_2m70cm_state_t *dev, rfmodule_2m70cm_cmd_strobe_t addr);
 u8 rfmodule_2m70cm_write_register(rfmodule_2m70cm_state_t *dev, u16 addr, u8 value);
 u8 rfmodule_2m70cm_read_register(rfmodule_2m70cm_state_t *dev, u16 addr);
@@ -304,8 +304,18 @@ void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_h
 
 
 #if defined(RFMODULE_2M70CM_IMPLEMENTATION)
+
+void _rfmodule_2m70cm_process_status_byte(rfmodule_2m70cm_state_t *dev, u8 status){
+    if(status && 1<<7){
+        dev->chip_ready = true;
+    } else{
+        dev->chip_ready = false;
+    }
+	dev->state_status_byte = ((status >> 4) & 0x7);
+}
+
 // SPI chip select 
-u8 rfmodule_2m70cm_set_cs(rfmodule_2m70cm_state_t *dev, bool8 value){
+void _rfmodule_2m70cm_set_cs(rfmodule_2m70cm_state_t *dev, bool8 value){
     gpio_put(dev->config.spi_pin_cs, value); /* active low CS */
 }
 
@@ -348,25 +358,17 @@ i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev){
 }
 
 
-void _rfmodule_2m70cm_process_status_byte(rfmodule_2m70cm_state_t *dev, u8 status){
-    if(status && 1<<7){
-        dev->chip_ready = true;
-    } else{
-        dev->chip_ready = false;
-    }
-	dev->state_status_byte = ((status >> 4) & 0x7);
-}
 u8 rfmodule_2m70cm_write_cmd(rfmodule_2m70cm_state_t *dev, rfmodule_2m70cm_cmd_strobe_t addr){
-    rfmodule_2m70cm_set_cs(dev, 0);
+    _rfmodule_2m70cm_set_cs(dev, 0);
     spi_write_blocking(dev->config.spi_port, &addr, 1);
-    rfmodule_2m70cm_set_cs(dev, 1);
+    _rfmodule_2m70cm_set_cs(dev, 1);
 }
 
 u8 rfmodule_2m70cm_write_register(rfmodule_2m70cm_state_t *dev, u16 addr, u8 value){
     u8 txd[3] = {addr>>8, addr&0xFF, value}; //raw bytes to write
     u8 unprocessed_status = 0;
 
-    rfmodule_2m70cm_set_cs(dev, 0);
+    _rfmodule_2m70cm_set_cs(dev, 0);
     if(txd[0] == 0){ // standard register space
         txd[1] = 0<<7 | 0<<6 | (txd[1]&0x3F); /* clear read bit (7), clear burst bit (6) on first byte sent (address byte in this case)*/
         spi_write_read_blocking(dev->config.spi_port, txd+1, &unprocessed_status, 1); //write txd[1] (address). It's a read because this gives us the status byte to process later
@@ -380,7 +382,7 @@ u8 rfmodule_2m70cm_write_register(rfmodule_2m70cm_state_t *dev, u16 addr, u8 val
 
     _rfmodule_2m70cm_process_status_byte(dev, unprocessed_status);
 
-	rfmodule_2m70cm_set_cs(dev, 1);
+	_rfmodule_2m70cm_set_cs(dev, 1);
     return value;
 }
 
@@ -389,7 +391,7 @@ u8 rfmodule_2m70cm_read_register(rfmodule_2m70cm_state_t *dev, u16 addr){
     u8 unprocessed_status = 0;
     u8 value = 0;
 
-    rfmodule_2m70cm_set_cs(dev, 0);
+    _rfmodule_2m70cm_set_cs(dev, 0);
     if(txd[0] == 0){
         txd[1] = 1<<7 | 0<<6 | (txd[1]&0x3F); /* set read bit (7), clear burst bit (6) on first byte sent (address byte in this case)*/
         spi_write_read_blocking(dev->config.spi_port, txd+1, &unprocessed_status, 1); //write txd[1] (address). It's a read because this gives us the status byte to process later
@@ -405,7 +407,7 @@ u8 rfmodule_2m70cm_read_register(rfmodule_2m70cm_state_t *dev, u16 addr){
 
     //read the requested register value
     spi_read_blocking(dev->config.spi_port, 0, &value, 1);
-	rfmodule_2m70cm_set_cs(dev, 1);
+	_rfmodule_2m70cm_set_cs(dev, 1);
 
     return value;
 }
@@ -501,13 +503,47 @@ i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev){
 }
 
 void rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, uint32_t freq){
-	rfmodule_2m70cm_write_cmd(dev, SIDLE);
-	sleep_ms(10);
+    static const u32 cc1200_xosc_hz = 40 * MHZ;
+    static const u32 cc1200_freq_word_scale = 1 << 16;
 
-	uint32_t freq_word = roundf((float)freq/5000000.0f*((uint32_t)1<<16));
-	rfmodule_2m70cm_write_register(dev, 0x2F0C, (freq_word>>16)&0xFF);
-	rfmodule_2m70cm_write_register(dev, 0x2F0D, (freq_word>>8)&0xFF);
-	rfmodule_2m70cm_write_register(dev, 0x2F0E, freq_word&0xFF);
+    u8 fs_cfg_bandselect = 0;
+    u8 lo_divider = 0;
+
+    if(freq >= 820 * MHZ && freq <= 960 * MHZ){
+        fs_cfg_bandselect = 0x02;
+        lo_divider = 4;
+    } else if(freq >= 410 * MHZ && freq <= 480 * MHZ){
+        fs_cfg_bandselect = 0x04;
+        lo_divider = 8;
+    } else if(freq >= 273300 * KHZ && freq <= 320 * MHZ){
+        fs_cfg_bandselect = 0x06;
+        lo_divider = 12;
+    } else if(freq >= 205 * MHZ && freq <= 240 * MHZ){
+        fs_cfg_bandselect = 0x08;
+        lo_divider = 16;
+    } else if(freq >= 164 * MHZ && freq <= 192 * MHZ){
+        fs_cfg_bandselect = 0x0A;
+        lo_divider = 20;
+    } else if(freq >= 136700 * KHZ && freq <= 160 * MHZ){
+        fs_cfg_bandselect = 0x0B;
+        lo_divider = 24;
+    } else{
+        return;
+    }
+
+    rfmodule_2m70cm_write_cmd(dev, SIDLE);
+    sleep_us(100);
+
+    {
+        u8 current_fs_cfg = rfmodule_2m70cm_read_register(dev, CC1200_REG_FS_CFG);
+        u8 next_fs_cfg = (current_fs_cfg & 0xF0) | fs_cfg_bandselect;
+        u32 freq_word = (u32)((((u64)freq * lo_divider * cc1200_freq_word_scale) + (cc1200_xosc_hz / 2)) / cc1200_xosc_hz);
+
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FS_CFG, next_fs_cfg);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ2, (freq_word >> 16) & 0xFF);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ1, (freq_word >> 8) & 0xFF);
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_FREQ0, freq_word & 0xFF);
+    }
 }
 
 #endif /* HT15_RFMODULE_2M70CM_IMPLEMENTATION */
