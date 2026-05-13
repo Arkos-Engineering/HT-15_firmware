@@ -1,6 +1,10 @@
+CompileFlags:
+    Add: [-xc, -std=c99, -pedantic, -Wall, -Wextra, -DPICO_SSD1681_IMPLEMENTATION]
+---
 If:
     PathMatch: [ui_example_test.c, png_to_bitmap.c]
 CompileFlags:
     CompilationDatabase: None
     Add: [-xc, -std=c99, -pedantic, -Wall, -Wextra]
     Compiler: cc
+

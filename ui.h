@@ -33,7 +33,7 @@ typedef enum{
 
 typedef struct{
         u8 x, y, width, height;
-        /* row major */
+        /* row major, assumes bitset*/
         u8 * buffer;
         htui_display_draw_command_mode mode;
 } htui_display_draw_command;
@@ -41,22 +41,24 @@ typedef struct{
 
 /*TODO: these external functions only work in a static linking context, if we are dynamic linking these probably need to be function pointers that are stored in the state. */
 
-/* this is meant to be implementoud by the code using this module. this is called multiple times until the mode is set to finished. */
+/* this is meant to be implementoud by the code using this module. this is called multiple times until the mode is set to finished. 
+ * this assumes that any relivent data passed in is not needed after its invocation.*/
 HTUI_EXTERNAL_EXPORT bool8 htui_external_draw(htui_display_draw_command * command, void * p_user_state);
 
 /* basic font loading stuff, why because I want japanese on this radio. And i guess other languages are cool too. https://www.gnu.org/software/gettext/manual/html_node/index.html*/
 typedef struct {
         u8 * data;
-        u32 data_width, data_height;
-        u8 x, y, x2, y2;
+        u8 width, height;
 } htui_glyph;
 
 /* TODO these need to have a callback passed into them because they might unload the data
  * and the burden of holding onto the data should be on the ui library*/
 HTUI_EXTERNAL_EXPORT bool8 htui_external_list_fonts(fat_str ** out_fonts, u32 * out_fonts_size, void * user_state);
 HTUI_EXTERNAL_EXPORT bool8 htui_external_list_code_points(fat_str const font, u8 ** out_code_points, u32 * out_code_points_size, void * user_state);
-/* TODO: add font size stuff.*/
-HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_point_index, htui_glyph ** out_glyph, void * user_state);
+/* givbe pointer to a bitmap where the width and height are the bits, this will be called every time we need a glyph so this should be fast.
+ * the memory used if the glyph needs to be loaded should be managed by the callee and we ecpect the glyph returned from this to be good until
+ * neXt invocation of this function. */
+HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_point_index, htui_glyph const ** out_glyph, void * user_state);
 
 typedef enum{
         htui_component_state_error,
@@ -215,7 +217,8 @@ _HTUI_EXPORT bool8 htui_end(htui_state * state);
 #include <string.h>
 
 /*TODO: have this sized based on some external macros also have it be a bitset*/
-u8 buffer[200*200] = {0};
+u8 buffer[(200*200)/8] = {0};
+u32 const buffer_size = sizeof(buffer);
 
 _HTUI_EXPORT void htui_initalize(u8 width, u8 height, htui_state * state, void * user_state){
         memset(state, 0, sizeof(htui_state));
@@ -231,9 +234,7 @@ _HTUI_EXPORT bool8 htui_begin(htui_state * state){
 
 _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
 
-        htui_display_draw_command command = { 50, 50, 100, 100, buffer, htui_draw_command_mode_full_deep_clean, };
-
-        u16 x, y;
+        htui_display_draw_command command = { .x = 50, .y = 50, .width = 100, .height = 100, .buffer = buffer, .mode = htui_draw_command_mode_full_deep_clean};
 
         fat_str * fonts;
         u32 fonts_size;
@@ -260,40 +261,24 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
                         c_str text = state->commands[i].text;
                         ifor(t, state->commands[i].text_size){
                                 /*TODO: check code point exists in current font map. htui_external_list_code_points*/
-                                htui_glyph * glyph;
+                                htui_glyph const * glyph;
                                 bool8 found_font_for_glyph = 0;
 
                                 ifor(f, fonts_size){
-                                        if(htui_external_get_glyph(fonts[f], text[t], &glyph, state->user_state)){
-                                                found_font_for_glyph = 1;
-                                                break;
-                                        }
+                                        found_font_for_glyph = htui_external_get_glyph(fonts[f], text[t], &glyph, state->user_state);
+                                        if(found_font_for_glyph) break;
                                 }
                                 /*TODO: log error and crash and core dump*/
                                 if(!found_font_for_glyph || !glyph) return 0;
 
-                                u16 glyph_width = glyph->x2 - glyph->x;
-                                u16 glyph_height = glyph->y2 - glyph->y;
-
-                                ifor(gy, glyph_height){
-                                        ifor(gx, glyph_width){
-                                                u32 glyph_data_buffer_index = (glyph->data_width * (gy + glyph->y)) + (gx + glyph->x);
-                                                u32 buffer_index = gy * glyph_width + gx;
-                                                buffer[buffer_index] = glyph->data[glyph_data_buffer_index];
-                                        }
-                                }
-
-                                // glyph->data
-
                                 command.x = x_offset;
                                 command.y = y_offset;
                                 command.mode = htui_draw_command_mode_finished;
-                                command.width = glyph_width;
-                                command.height = glyph_height;
-                                command.buffer = buffer;
+                                command.width = glyph->width;
+                                command.height = glyph->height;
+                                command.buffer = glyph->data;
                                 htui_external_draw(&command, state->user_state);
-                                x_offset += glyph_width;
-
+                                x_offset += glyph->width;
                         }
 
                         if(x_offset > state->width) command.width = state->width;
