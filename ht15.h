@@ -24,10 +24,12 @@ HT15_EXPORT bool8 ht15_run(void);
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include <pico.h>
 #include <pico/stdlib.h>
 #include "pico/multicore.h"
 #include "pico/rand.h"
+#include "pico/mutex.h"
 #include "hardware/adc.h"
 #include "hardware/spi.h"
 #include "hardware/i2c.h"
@@ -47,6 +49,8 @@ HT15_EXPORT bool8 ht15_run(void);
 
 #include "quadrature_encoder.pio.h"
 
+mutex_t rfmodule_mutex;
+
 rfmodule_2m70cm_state_t rfmodule_state = {
     .config = {
         .spi_port = spi0,
@@ -54,7 +58,7 @@ rfmodule_2m70cm_state_t rfmodule_state = {
         .spi_pin_miso = pin_rf_sdo,
         .spi_pin_sck = pin_rf_sclk,
         .spi_pin_cs = pin_rf_sel,
-        .spi_baudrate = 5 * MHZ,
+        .spi_baudrate = 10 * MHZ,
         .spi_shared = false,
 
         .i2c_port = i2c1,
@@ -180,9 +184,9 @@ static void rf_init(){
     }
 }
 
-static void rf_test(u64 frequency_hz, bool8 amp_enable, bool8 state){
+static void rf_transmit(u64 frequency_hz, bool8 amp_enable, f32 dbm, bool8 state){
     // rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, get_rand_32() & 0xFF); /* random data */
-    rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, get_rand_32()&0xFF);
+    // rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, get_rand_32()&0xFF);
     // printf("rf part/version: %02X / state %u\n",
     //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_PARTVERSION),
     //     rfmodule_2m70cm_read_register(&rfmodule_state, CC1200_REG_MARCSTATE));
@@ -191,29 +195,35 @@ static void rf_test(u64 frequency_hz, bool8 amp_enable, bool8 state){
         return;
     }
 
+    mutex_enter_blocking(&rfmodule_mutex);
+
     if(!state){
         printf("RF test: turning off carrier\n");
-        rfmodule_2m70cm_write_cmd(&rfmodule_state, CC1200_CMD_SIDLE);
+        rfmodule_2m70cm_set_tx(&rfmodule_state, false);
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_RX_ONLY);
-        rfmodule_state.is_keyed = 0;
+        
+        mutex_exit(&rfmodule_mutex);
         return;
     }
 
     rfmodule_2m70cm_write_cmd(&rfmodule_state, CC1200_CMD_SIDLE);
     if(amp_enable){
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_ON);
+        rfmodule_2m70cm_set_output_dbm(&rfmodule_state, dbm);
     } else{
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_OFF);
+        cc1200_set_output_level(&rfmodule_state, dbm);
+
     }
     rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
     rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(25*KHZ));
     rfmodule_2m70cm_set_frequency(&rfmodule_state, frequency_hz);
-    // rfmodule_2m70cm_write_register(&rfmodule_state, CC1200_REG_MDMCFG2, 0x01); /* MDMCFG2.CFM_DATA_EN: unmodulated CW carrier */
-    // rfmodule_3m70cm_write_register(&rfmodule_state, CC1200_REG_CFM_TX_DATA_IN, 0); /* write data to be centered CW carrier */
-    sleep_ms(1);
-    rfmodule_2m70cm_write_cmd(&rfmodule_state, CC1200_CMD_STX);
+    // sleep_ms(1);
+    rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, 0);
+    rfmodule_2m70cm_set_tx(&rfmodule_state, true);
 
-    rfmodule_state.is_keyed = 1;
+    mutex_exit(&rfmodule_mutex);
+
     return;
 }
 
@@ -588,9 +598,52 @@ HT15_EXPORT bool8 ht15_initalize(void){
     return 1;
 }
 
+u64 realtime_sample_rate = 48*KHZ;
+void ht15_run_realtime_core(void){
+    u16 tone_hz = 700;
+
+    i8 current_sample = 0;
+
+    u64 realtime_cycle_count = 0;
+    u64 loop_time_target_us = 1000000/realtime_sample_rate;
+    uint16_t slowest_loop_time_us = 0;
+    float rolling_average_loop_time_us = 0.0f;
+    uint64_t loop_start_us = time_us_64();
+    while(true){
+        if(rfmodule_state.is_keyed){
+            if(mutex_try_enter(&rfmodule_mutex, 0)){
+                current_sample = (i8)(sin(((float)time_us_32()/1000000.0)*6.283185*tone_hz)*127);
+                // printf("%i\n", current_sample);
+                rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, (u8)current_sample);
+                mutex_exit(&rfmodule_mutex);
+            }
+        }
+
+
+        realtime_cycle_count += 1;
+        //control loop timing, track slowest loop time and rolling average for performance monitoring
+        loop_start_us = time_us_64()-loop_start_us;
+        sleep_us(loop_time_target_us>loop_start_us ? loop_time_target_us-loop_start_us : 0);
+        if (loop_start_us > slowest_loop_time_us){
+            slowest_loop_time_us = loop_start_us;
+        }
+
+        if(realtime_cycle_count%realtime_sample_rate == 0){
+            printf("realtime avg loop time microseconds: %f\n", rolling_average_loop_time_us);
+        } 
+        rolling_average_loop_time_us = (rolling_average_loop_time_us  *0.999f) + ((float)loop_start_us * 0.001f);
+        loop_start_us = time_us_64();
+    }
+    // printf
+
+}
+
 HT15_EXPORT bool8 ht15_run(void){
     u32 cycle = 0;
     bool8 should_clean_display = 1;
+
+    mutex_init(&rfmodule_mutex);
+    multicore_launch_core1(ht15_run_realtime_core);
 
     u64 loop_time_target_us = 10000; //target loop time of 10ms
     uint16_t slowest_loop_time_us = 0;
@@ -638,7 +691,7 @@ HT15_EXPORT bool8 ht15_run(void){
             
         }
 
-        rf_test(439*MHZ, false, key_states[key_ptt] == key_state_pressed);
+        rf_transmit(439*MHZ, true, 25, key_states[key_ptt] == key_state_pressed);
         gpio_put(pin_led_status, led_status_value);
         cycle += 1;
 

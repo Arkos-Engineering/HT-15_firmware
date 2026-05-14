@@ -318,9 +318,13 @@ i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_set_power_mode(rfmodule_2m70cm_state_t *dev, rfmodule_power_mode_t mode);
 rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *dev, rfmodule_modulation_t modulation);
-rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data);
 bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
 u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz);
+rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data);
+rfmodule_error_code_t rfmodule_2m70cm_set_tx(rfmodule_2m70cm_state_t *dev, bool state);
+rfmodule_error_code_t rfmodule_2m70cm_set_rx(rfmodule_2m70cm_state_t *dev, bool state);
+f32 cc1200_set_output_level(rfmodule_2m70cm_state_t *dev, f32 dbm);
+f32 rfmodule_2m70cm_set_output_dbm(rfmodule_2m70cm_state_t *dev, f32 dbm);
 
 
 
@@ -712,6 +716,69 @@ rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *d
     }
     return RFMODULE_ERROR_UNIMPLEMENTED;
 }
+
+rfmodule_error_code_t rfmodule_2m70cm_set_tx(rfmodule_2m70cm_state_t *dev, bool state){
+    dev->is_keyed = state;
+    if(state){
+        rfmodule_2m70cm_write_cmd(dev, CC1200_CMD_STX);
+        return RFMODULE_ERROR_SUCCESS;
+    }
+    rfmodule_2m70cm_write_cmd(dev, CC1200_CMD_SIDLE);
+    return RFMODULE_ERROR_SUCCESS;
+}
+
+rfmodule_error_code_t rfmodule_2m70cm_set_rx(rfmodule_2m70cm_state_t *dev, bool state){
+    dev->is_keyed = false;
+    if(state){
+        rfmodule_2m70cm_write_cmd(dev, CC1200_CMD_SRX);
+        return RFMODULE_ERROR_SUCCESS;
+    }
+    rfmodule_2m70cm_write_cmd(dev, CC1200_CMD_SIDLE);
+    return RFMODULE_ERROR_SUCCESS;
+
+}
+
+f32 cc1200_set_output_level(rfmodule_2m70cm_state_t *dev, f32 dbm){
+    //valid levels are -16dBm to +14dBm in steps of 0.5dBm
+    u8 pa_power_ramp;
+    f32 corrected_dbm = (round(dbm * 2))*.5; // rounds to the nearest .5
+    
+    //constrain dbm
+    if(corrected_dbm > 14.25){
+        corrected_dbm = 14.0;
+    } else if(corrected_dbm < -16.25){
+        corrected_dbm = -16;
+    }
+
+    //PA_POWER_RAMP = (2(corrected_dbm+18))-1 // PA_POWER_RAMP must be in (3,63)
+    pa_power_ramp = (u8)(((2*(corrected_dbm+18))-1)+.5); // +.5 to make sure the float rounds correctly
+
+    u8 pa_cfg1 = rfmodule_2m70cm_read_register(dev, CC1200_REG_PA_CFG1);
+    pa_cfg1 &= 0b11000000; // clear pa_power_ramp bits
+    pa_cfg1 |= pa_power_ramp & 0b00111111; // write pa_power_amp bits
+    rfmodule_2m70cm_write_register(dev, CC1200_REG_PA_CFG1, pa_cfg1);
+
+    return corrected_dbm;
+}
+
+/*
+* valid levels are (25, 36) .5db step
+* this code assumes the amp is on
+*/
+f32 rfmodule_2m70cm_set_output_dbm(rfmodule_2m70cm_state_t *dev, f32 dbm){
+    //TODO Ben 2026-05-14 This should use a lookup table to calculate the actual radiated dBm output based on effeciency of the tuned RF path, not just the expected amp gain.
+    f32 amp_gain_db = 41;
+    f32 corrected_dbm = dbm;
+
+    //constrain dbm
+    if(corrected_dbm > 30){ //realistically this should be 36ish, however i am limiting it because I blew an amp the other day
+        corrected_dbm = 30;
+    } else if(corrected_dbm < 25){
+        corrected_dbm = 25;
+    }
+    return cc1200_set_output_level(dev, dbm-amp_gain_db);
+}
+
 
 #endif /* HT15_RFMODULE_2M70CM_IMPLEMENTATION */
 #ifdef __cplusplus
