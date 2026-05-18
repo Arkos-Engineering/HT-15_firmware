@@ -75,6 +75,7 @@ typedef struct {
     rfmodule_power_mode_t current_power_mode;
     u32 current_frequency;
     u32 current_bw;
+    u32 current_symbol_rate;
 } rfmodule_2m70cm_state_t;
 
 typedef enum {
@@ -318,6 +319,8 @@ i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_set_power_mode(rfmodule_2m70cm_state_t *dev, rfmodule_power_mode_t mode);
 rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *dev, rfmodule_modulation_t modulation);
+u8 rfmodule_2m70cm_set_symbol_rate(rfmodule_2m70cm_state_t *dev, u32 rate_hz);
+u8 rfmodule_2m70cm_set_upsampler(rfmodule_2m70cm_state_t *dev, u8 factor);
 bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
 u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz);
 rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data);
@@ -535,7 +538,10 @@ rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *de
     
     if(modulation == RFMODULE_MODULATION_FM ||
     modulation == RFMODULE_MODULATION_CW){
-        rfmodule_2m70cm_write_register(dev, CC1200_REG_MDMCFG2, 0x01); /* Enter "CFM" Mode*/
+        u8 mdmcfg2 = rfmodule_2m70cm_read_register(dev, CC1200_REG_MDMCFG2);
+        mdmcfg2 &= 0b11111110;
+        mdmcfg2 |= 0x01; // enter CMF mode
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_MDMCFG2, mdmcfg2);
         rfmodule_2m70cm_write_register(dev, CC1200_REG_CFM_TX_DATA_IN, 0); /* write data to be centered CW carrier */
         dev->current_modulation = modulation;
         return RFMODULE_ERROR_SUCCESS;
@@ -554,6 +560,64 @@ rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *de
     }
     
 
+
+}
+
+u8 rfmodule_2m70cm_set_symbol_rate(rfmodule_2m70cm_state_t *dev, u32 rate_hz){
+
+}
+
+/*
+* sets the upsampler for CFM modulation. 
+* factor should be 0(default), 1(bypass), 2, 4, 8, 16, 32, 64
+* returns: actual value set
+*/
+u8 rfmodule_2m70cm_set_upsampler(rfmodule_2m70cm_state_t *dev, u8 factor){
+    if(factor == 0){
+        factor = 1;
+    }
+
+    //check if value is invalid
+    switch (factor) {
+    case 1:
+    case 2:
+    case 4:
+    case 8:
+    case 16:
+    case 32:
+    case 64:
+        break;
+    default:
+        factor = 1; //default value if invalid
+        break;
+    }
+
+    //check that requested factor value is valid against the current symbol rate, lower it and check again if it is not
+    while (factor > 1 &&
+        ((u64)dev->current_symbol_rate * 16u * factor) > ((u64)F_XOSC / 4u)) {
+        factor >>= 1;
+    }
+
+    u8 upsampler_p = 0;
+    switch (factor) {
+        case 1:  upsampler_p = 0b000; break;
+        case 2:  upsampler_p = 0b001; break;
+        case 4:  upsampler_p = 0b010; break;
+        case 8:  upsampler_p = 0b011; break;
+        case 16: upsampler_p = 0b100; break;
+        case 32: upsampler_p = 0b101; break;
+        case 64: upsampler_p = 0b110; break;
+        default:
+            upsampler_p = 0b000;
+            break;
+    }
+
+    u8 mdmcfg2 = rfmodule_2m70cm_read_register(dev, CC1200_REG_MDMCFG2);
+    mdmcfg2 &= 0b11110001;
+    mdmcfg2 |= upsampler_p << 1; // upsampler value
+    rfmodule_2m70cm_write_register(dev, CC1200_REG_MDMCFG2, mdmcfg2);
+
+    return factor;
 
 }
 
@@ -705,6 +769,10 @@ u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz){
     return actual_bandwidth;
 }
 
+/*
+* sets tx transmit buffer for CFM data. 
+* data variable is twos compliment, -63 to +64
+*/
 rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data){
     if(dev->current_modulation == RFMODULE_MODULATION_FM){
         rfmodule_2m70cm_write_register(dev, CC1200_REG_CFM_TX_DATA_IN, data); /* random data */

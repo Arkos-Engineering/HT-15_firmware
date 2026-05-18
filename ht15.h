@@ -216,6 +216,7 @@ static void rf_transmit(u64 frequency_hz, bool8 amp_enable, f32 dbm, bool8 state
 
     }
     rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
+    printf("upsampler set to: %i\n", rfmodule_2m70cm_set_upsampler(&rfmodule_state, 64));
     rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(25*KHZ));
     rfmodule_2m70cm_set_frequency(&rfmodule_state, frequency_hz);
     // sleep_ms(1);
@@ -612,7 +613,7 @@ void ht15_run_realtime_core(void){
     while(true){
         if(rfmodule_state.is_keyed){
             if(mutex_try_enter(&rfmodule_mutex, 0)){
-                current_sample = (i8)(sin(((float)time_us_32()/1000000.0)*6.283185*tone_hz)*127);
+                current_sample = (i8)(sin(((float)time_us_32()/1000000.0)*6.283185*tone_hz)*64);
                 // printf("%i\n", current_sample);
                 rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, (u8)current_sample);
                 mutex_exit(&rfmodule_mutex);
@@ -627,10 +628,9 @@ void ht15_run_realtime_core(void){
         if (loop_start_us > slowest_loop_time_us){
             slowest_loop_time_us = loop_start_us;
         }
-
-        if(realtime_cycle_count%realtime_sample_rate == 0){
-            printf("realtime avg loop time microseconds: %f\n", rolling_average_loop_time_us);
-        } 
+        // if(realtime_cycle_count%realtime_sample_rate == 0){
+        //     printf("realtime avg loop time microseconds: %f\n", rolling_average_loop_time_us);
+        // } 
         rolling_average_loop_time_us = (rolling_average_loop_time_us  *0.999f) + ((float)loop_start_us * 0.001f);
         loop_start_us = time_us_64();
     }
