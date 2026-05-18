@@ -319,7 +319,7 @@ i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev);
 i8 rfmodule_2m70cm_set_power_mode(rfmodule_2m70cm_state_t *dev, rfmodule_power_mode_t mode);
 rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *dev, rfmodule_modulation_t modulation);
-u8 rfmodule_2m70cm_set_symbol_rate(rfmodule_2m70cm_state_t *dev, u32 rate_hz);
+float rfmodule_2m70cm_set_symbol_rate_kbps(rfmodule_2m70cm_state_t *dev, float rate_kbps);
 u8 rfmodule_2m70cm_set_upsampler(rfmodule_2m70cm_state_t *dev, u8 factor);
 bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
 u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz);
@@ -563,8 +563,63 @@ rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *de
 
 }
 
-u8 rfmodule_2m70cm_set_symbol_rate(rfmodule_2m70cm_state_t *dev, u32 rate_hz){
+/*
+* sets the symbol rate to rate_kbps, and returns the exact rate set
+*/
+float rfmodule_2m70cm_set_symbol_rate_kbps(rfmodule_2m70cm_state_t *dev, float rate_kbps){
+    // srate_e is a 4 bit uint, srate_m is a 20 bit uint
+    // e=0: rate_ksps = (srate_m/2^38)*F_XOSC_KHZ
+    // e>0: rate_ksps = (((2^20+srate_m)*2^srate_e)/2^39)*F_XOSC_KHZ
+    u32 srate_m = 0;
+    u8 srate_e = 0;
+    double xosc_float = (double)F_XOSC;
+    double rate_ksps = (double)rate_kbps;
 
+    double max_symbol_rate_if_srate_e_is_zero =
+        ((double)((1ULL << 20) - 1) / (double)(1ULL << 38)) * xosc_float;
+
+    if(rate_ksps <= max_symbol_rate_if_srate_e_is_zero){
+        srate_m = (u32)((rate_ksps / xosc_float) * (double)(1ULL << 38) + 0.5);
+        if(srate_m > ((1UL << 20) - 1UL)){
+            srate_m = (1UL << 20) - 1UL;
+        }
+    } else {
+        for(srate_e = 1; srate_e <= 15; srate_e++){
+            double mantissa =
+                (rate_ksps * (double)(1ULL << 39)) /
+                (xosc_float * (double)(1ULL << srate_e)) -
+                (double)(1ULL << 20);
+
+            if(mantissa >= 0.0 && mantissa <= (double)((1ULL << 20) - 1)){
+                srate_m = (u32)(mantissa + 0.5);
+                if(srate_m > ((1UL << 20) - 1UL)){
+                    srate_m = (1UL << 20) - 1UL;
+                }
+                break;
+            }
+        }
+
+        if(srate_e > 15){
+            srate_e = 15;
+            srate_m = (1UL << 20) - 1UL;
+        }
+    }
+
+    rfmodule_2m70cm_write_register(dev, CC1200_REG_SYMBOL_RATE0, (srate_m) & 0xFF);
+    rfmodule_2m70cm_write_register(dev, CC1200_REG_SYMBOL_RATE1, (srate_m >> 8) & 0xFF);
+    rfmodule_2m70cm_write_register(dev, CC1200_REG_SYMBOL_RATE2, ((srate_m >> 16) & 0x0F) | ((srate_e << 4) & 0xF0));
+
+    double actual_rate_ksps;
+    if(srate_e == 0){
+        actual_rate_ksps = ((double)srate_m / (double)(1ULL << 38)) * xosc_float;
+    } else {
+        actual_rate_ksps =
+            ((((double)(1ULL << 20) + (double)srate_m) * (double)(1ULL << srate_e)) /
+            (double)(1ULL << 39)) * xosc_float;
+    }
+
+    dev->current_symbol_rate = (u32)(actual_rate_ksps + 0.5);
+    return (float)actual_rate_ksps;
 }
 
 /*
@@ -594,7 +649,7 @@ u8 rfmodule_2m70cm_set_upsampler(rfmodule_2m70cm_state_t *dev, u8 factor){
 
     //check that requested factor value is valid against the current symbol rate, lower it and check again if it is not
     while (factor > 1 &&
-        ((u64)dev->current_symbol_rate * 16u * factor) > ((u64)F_XOSC / 4u)) {
+        ((u64)dev->current_symbol_rate * 16u * factor) > ((u64)F_XOSC / ((u64)4u * (u64)KHZ))) {
         factor >>= 1;
     }
 
