@@ -216,7 +216,7 @@ static void rf_transmit(u64 frequency_hz, bool8 amp_enable, f32 dbm, bool8 state
 
     }
     rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
-    printf("symbol rate set to: %fkbps\n", rfmodule_2m70cm_set_symbol_rate_kbps(&rfmodule_state, 48000));
+    printf("symbol rate set to: %fsps\n", rfmodule_2m70cm_set_symbol_rate_sps(&rfmodule_state, 48000));
     printf("upsampler set to: %i\n", rfmodule_2m70cm_set_upsampler(&rfmodule_state, 64));
     rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(25*KHZ));
     rfmodule_2m70cm_set_frequency(&rfmodule_state, frequency_hz);
