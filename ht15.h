@@ -47,7 +47,7 @@ HT15_EXPORT bool8 ht15_run(void);
 #define RFMODULE_2M70CM_IMPLEMENTATION
 #include "rfmodule_2M70CM.h"
 
-#include "quadrature_encoder.pio.h"
+// #include "quadrature_encoder.pio.h"
 
 mutex_t rfmodule_mutex;
 
