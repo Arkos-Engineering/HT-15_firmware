@@ -359,9 +359,9 @@ static void audio_amp_set_volume(u8 volume){
     tlv320_set_channel_volume(&audioamp, 1, vol);   /* Right channel */
 }
 
-static void audio_beep(uint16_t frequency_hz, uint16_t duration_ms, int8_t volume_db){
+static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
     // Sample rate is 48kHz based on our clock divider configuration
-    const uint32_t sample_rate = 48000;
+    const u32 sample_rate = 48000;
     
     // Frequency must be less than sample_rate/4 per datasheet
     if (frequency_hz >= sample_rate / 4) {
@@ -608,9 +608,9 @@ void ht15_run_realtime_core(void){
 
     u64 realtime_cycle_count = 0;
     u64 loop_time_target_us = 1000000/realtime_sample_rate;
-    uint16_t slowest_loop_time_us = 0;
+    u16 slowest_loop_time_us = 0;
     float rolling_average_loop_time_us = 0.0f;
-    uint64_t loop_start_us = time_us_64();
+    u64 loop_start_us = time_us_64();
     while(true){
         if(rfmodule_state.is_keyed){
             if(mutex_try_enter(&rfmodule_mutex, 0)){
@@ -647,9 +647,9 @@ HT15_EXPORT bool8 ht15_run(void){
     multicore_launch_core1(ht15_run_realtime_core);
 
     u64 loop_time_target_us = 10000; //target loop time of 10ms
-    uint16_t slowest_loop_time_us = 0;
+    u16 slowest_loop_time_us = 0;
     float rolling_average_loop_time_us = 0.0f;
-    uint64_t loop_start_us = time_us_64();
+    u64 loop_start_us = time_us_64();
     while(1){
         poll_input();
 
@@ -681,7 +681,7 @@ HT15_EXPORT bool8 ht15_run(void){
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
 
             char volume_string[10];
-            int writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
+            u16 writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, writen, 1, SSD1681_FONT_8);
 
             if(should_clean_display){
