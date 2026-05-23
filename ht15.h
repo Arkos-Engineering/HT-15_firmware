@@ -47,7 +47,11 @@ HT15_EXPORT bool8 ht15_run(void);
 #define RFMODULE_2M70CM_IMPLEMENTATION
 #include "rfmodule_2M70CM.h"
 
-// #include "quadrature_encoder.pio.h"
+#include "quadrature_encoder.pio.h"
+
+#define PICO_I2S_IMPLEMENTATION
+#include "i2s.h"
+#include "i2s.pio.h"
 
 mutex_t rfmodule_mutex;
 
@@ -385,7 +389,7 @@ static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
     // printf("Beep: %dHz, %dms, %ddB\n", frequency_hz, duration_ms, volume_db);
 }
 
-static void audio_init(){
+static void audio_codec_init(){
     audio_amp_reset_hard();
 
     // Initialize TLV320DAC3100 audio amplifier over I2C and init audio_config->audioamp
@@ -460,6 +464,10 @@ static void audio_init(){
     
     // Wait for output drivers to stabilize
     sleep_ms(50);
+}
+
+static void mic_init(){
+    
 }
 
 /* TODO@Zea as of December 20 2025 add knobs */
@@ -586,7 +594,7 @@ HT15_EXPORT bool8 ht15_initalize(void){
     printf("initalize rf\n");
     rf_init();
     printf("initalize audio\n");
-    audio_init();
+    audio_codec_init();
 
     // printf("initalize sd\n");
     /* SD card needs to init before anything else because it starts in SD mode and needs to be switched to SPI mode before the display can be used, which shares the same SPI bus */
@@ -681,8 +689,8 @@ HT15_EXPORT bool8 ht15_run(void){
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
 
             char volume_string[10];
-            u16 writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, writen, 1, SSD1681_FONT_8);
+            u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
 
             if(should_clean_display){
                 should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
