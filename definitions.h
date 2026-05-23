@@ -52,6 +52,8 @@ typedef struct{
 #define I2S_OUTPUT_PIO pio1
 #define I2S_OUTPUT_SM 2
 
+#define AUDIO_SAMPLE_RATE 8*KHZ
+
 #define PINS \
     X(buttonmatrix_a,       0)\
     X(buttonmatrix_b,       1)\
