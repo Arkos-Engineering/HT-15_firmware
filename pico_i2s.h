@@ -87,7 +87,6 @@ void i2s_program_start_synched(PIO pio, const i2s_config* config, void (*dma_han
 
 #if defined(PICO_I2S_IMPLEMENTATION)
 
-#include "i2s.h"
 #include <math.h>
 #include "hardware/clocks.h"
 #include "hardware/dma.h"

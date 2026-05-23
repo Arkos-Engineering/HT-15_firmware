@@ -50,8 +50,8 @@ HT15_EXPORT bool8 ht15_run(void);
 #include "quadrature_encoder.pio.h"
 
 #define PICO_I2S_IMPLEMENTATION
-#include "i2s.h"
-#include "i2s.pio.h"
+#include "pico_i2s.h"
+// #include "i2s.pio.h"
 
 mutex_t rfmodule_mutex;
 
