@@ -78,6 +78,30 @@ rfmodule_2m70cm_state_t rfmodule_state = {
     },
 };
 
+i2s_config i2s_config_mic = {
+    .fs = 32000,
+    .sck_mult = 384,
+    .bit_depth = 24,
+    // .sck_pin = pin_mic_scl,
+    .dout_pin = pin_mic_wordselect,
+    .din_pin = pin_mic_sdo,
+    .clock_pin_base = pin_mic_scl,
+    .sck_enable = false
+
+};
+// Looks like we are going to have to rewire the PCB. This PIO library needs DIN, BCLK, WORDSELECT in that order. on the mic I need to swap SCL and SDO. On the codec, I need to swap SDI, SDO
+
+// typedef struct i2s_config {
+//     u32 fs;
+//     u32 sck_mult;
+//     u8  bit_depth;
+//     u8  sck_pin;
+//     u8  dout_pin;
+//     u8  din_pin;
+//     u8  clock_pin_base;
+//     bool8     sck_enable;
+// } i2s_config;
+
 const u8 button_sense_pin[] = {pin_buttonmatrix_0, pin_buttonmatrix_1, pin_buttonmatrix_2, pin_buttonmatrix_3, pin_buttonmatrix_4, pin_buttonmatrix_5};
 const u8 button_power_pin[] = {pin_buttonmatrix_a, pin_buttonmatrix_b, pin_buttonmatrix_c, pin_buttonmatrix_d};
 
