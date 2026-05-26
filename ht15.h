@@ -647,7 +647,7 @@ void ht15_run_realtime_core(void){
         if(rfmodule_state.is_keyed){
             if(mutex_try_enter(&rfmodule_mutex, 0)){
                 current_sample = (i8)(sin(((float)time_us_32()/1000000.0)*6.283185*tone_hz)*64);
-                printf("%i\n", current_sample);
+                // printf("%i\n", current_sample);
                 rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, (u8)current_sample);
                 mutex_exit(&rfmodule_mutex);
             }

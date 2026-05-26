@@ -1,0 +1,9 @@
+; need to write my own for the current pinout (proto). Will correct the pinout for next build
+
+.program i2s_mic_in
+.side_set 1
+; pin 0 is BCLK, 1 is DO, 2 is LRCLK
+
+.wrap_target
+nop
+.wrap
