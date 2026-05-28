@@ -57,15 +57,12 @@ HT15_EXPORT bool8 ht15_run(void);
 
 #include "quadrature_encoder.pio.h"
 
-<<<<<<< HEAD
 #define PICO_I2S_IMPLEMENTATION
 #include "pico_i2s.h"
 // #include "i2s.pio.h"
 
 mutex_t rfmodule_mutex;
-=======
 
->>>>>>> 6ce1937 (looks like shit and is slow but does display something)
 
 rfmodule_2m70cm_state_t rfmodule_state = {
     .config = {
@@ -750,10 +747,7 @@ HT15_EXPORT bool8 ht15_run(void){
     u64 loop_time_target_us = 10000; //target loop time of 10ms
     u16 slowest_loop_time_us = 0;
     float rolling_average_loop_time_us = 0.0f;
-<<<<<<< HEAD
     u64 loop_start_us = time_us_64();
-=======
-    uint64_t loop_start_us = time_us_64();
 
     htui_state ui_state;
     u32 settings_button_id = 0;
@@ -761,7 +755,6 @@ HT15_EXPORT bool8 ht15_run(void){
     printf("Initalize\n");
     htui_initalize(200, 200, &ui_state, NULL);
 
->>>>>>> 6ce1937 (looks like shit and is slow but does display something)
     while(1){
         poll_input();
 
@@ -784,15 +777,12 @@ HT15_EXPORT bool8 ht15_run(void){
         if(!(cycle & 0b111111)){
             printf("trying to display settings\n");
 
-<<<<<<< HEAD
             char volume_string[10];
             u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
-=======
             htui_area_info main_area_info = {
                 .type = htui_area_type_vertical,
             };
->>>>>>> 6ce1937 (looks like shit and is slow but does display something)
 
             htui_begin_area(&ui_state, &main_area_info);
                 if(htui_button(&ui_state, &settings_button_id, "settings") == htui_component_state_pressed){
