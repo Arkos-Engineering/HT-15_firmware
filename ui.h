@@ -215,6 +215,7 @@ _HTUI_EXPORT bool8 htui_end(htui_state * state);
 
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 /*TODO: have this sized based on some external macros also have it be a bitset*/
 u8 buffer[(200*200)/8] = {0};
@@ -239,6 +240,7 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
         fat_str * fonts;
         u32 fonts_size;
         htui_external_list_fonts(&fonts, &fonts_size, state->user_state);
+        printf("found %d fonts.\n", fonts_size);
         if(fonts_size == 0) return 0;
 
         if(state->screen_state == htui_screen_state_unknown){
@@ -269,7 +271,10 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
                                         if(found_font_for_glyph) break;
                                 }
                                 /*TODO: log error and crash and core dump*/
-                                if(!found_font_for_glyph || !glyph) return 0;
+                                if(!found_font_for_glyph || !glyph){
+                                        printf("no font found for glyph.\n");
+                                        return 0;
+                                } 
 
                                 command.x = x_offset;
                                 command.y = y_offset;

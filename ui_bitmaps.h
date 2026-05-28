@@ -114,3 +114,5 @@ htui_glyph const glyphs[] = {
     {data_24, width24, height24},
     {data_25, width25, height25},
 };
+
+c_str glyph_code_points = "abcdefghijklmnopqrstuvwxyz";

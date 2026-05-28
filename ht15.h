@@ -9,7 +9,7 @@
 #endif
 
 #if !defined(HT15_EXPORT)
-#define HT15_EXPORT
+#define HT15_EXPORT 
 #endif
 
 HT15_EXPORT bool8 ht15_initalize(void);
@@ -21,6 +21,7 @@ HT15_EXPORT bool8 ht15_run(void);
 
 /* NO_CHECKIN */ #define HT15_IMPLEMENTATION
 #if defined(HT15_IMPLEMENTATION)
+
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -38,6 +39,10 @@ HT15_EXPORT bool8 ht15_run(void);
 #include "hardware/clocks.h"
 #include <pico/bootrom.h>
 
+
+#define HT15_UTIL_IMPLEMENTATION
+#include "util.h"
+
 #define PICO_SSD1681_IMPLEMENTATION
 #include"pico_ssd1681.h"
 
@@ -47,13 +52,20 @@ HT15_EXPORT bool8 ht15_run(void);
 #define RFMODULE_2M70CM_IMPLEMENTATION
 #include "rfmodule_2M70CM.h"
 
+
+
+
 #include "quadrature_encoder.pio.h"
 
+<<<<<<< HEAD
 #define PICO_I2S_IMPLEMENTATION
 #include "pico_i2s.h"
 // #include "i2s.pio.h"
 
 mutex_t rfmodule_mutex;
+=======
+
+>>>>>>> 6ce1937 (looks like shit and is slow but does display something)
 
 rfmodule_2m70cm_state_t rfmodule_state = {
     .config = {
@@ -138,11 +150,6 @@ static void audio_amp_set_volume(u8 volume);
 static void audio_stop_system_clock();
 static void audio_start_system_clock();
 static void audio_amp_reset_hard();
-
-/* alignment represents the size of the buffer at 1 << alignment kindof like int2 int3 in fasm */
-static inline u32 circle_buffer_index_at(u8 alignment, i32 index){
-        return index & ((1<<alignment)-1);
-}
 
 static void i2c1_scan_bus(){
     printf("Scanning I2C1 bus...\n");
@@ -243,6 +250,7 @@ static void rf_transmit(u64 frequency_hz, bool8 amp_enable, f32 dbm, bool8 state
         cc1200_set_output_level(&rfmodule_state, dbm);
 
     }
+
     rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
     printf("symbol rate set to: %fsps\n", rfmodule_2m70cm_set_symbol_rate_sps(&rfmodule_state, AUDIO_SAMPLE_RATE));
     printf("upsampler set to: %i\n", rfmodule_2m70cm_set_upsampler(&rfmodule_state, 64));
@@ -553,6 +561,67 @@ static void poll_input(){
     }
 }
 
+#define HTUI_EXTERNAL_EXPORT static
+#define HTUI_IMPLEMENTATION
+#include "ui_bitmaps.h"
+
+HTUI_EXTERNAL_EXPORT bool8 htui_external_draw(htui_display_draw_command * command, void * p_user_state){
+    /*TODO: make this clean just the area not the whole screen.*/
+    if(command->mode == htui_draw_command_mode_deep_clean){
+        ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_CLEAN_FULL);
+    }else if(command->mode == htui_draw_command_mode_full_deep_clean){
+        ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_CLEAN_FULL_AGGRESSIVE);
+    }
+    
+    printf("COmmand x %d y %d w %d h %d \n", command->x, command->y, command->width, command->height);
+    ifor(px, command->width){
+        ifor(py, command->height){
+            ssd1681_write_point(SSD1681_COLOR_BLACK, command->x + px, command->y + py, !test_bit_at_index(command->buffer, px + py * command->width));
+        }
+    }
+
+
+    if(command->mode == htui_draw_command_mode_finished){
+        ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
+        // ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+        // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+        // ssd1681_write_data(0x00);
+        // ssd1681_write_data(0x80);
+        // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+        // ssd1681_write_data(0xFE);
+        // ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+    }
+    return true;
+}
+
+HTUI_EXTERNAL_EXPORT bool8 htui_external_list_fonts(fat_str ** out_fonts, u32 * out_fonts_size, void * user_state){
+    static fat_str internal_font = {
+        .size = array_size("internal_font"),
+        .data = "internal_font",
+    };
+
+    *out_fonts = &internal_font;
+    *out_fonts_size = 1;
+    return 1;
+}
+
+HTUI_EXTERNAL_EXPORT bool8 htui_external_list_code_points(fat_str const font, u8 ** out_code_points, u32 * out_code_points_size, void * user_state){
+    if(memcmp(font.data, "internal_font", font.size)) return 0;
+
+    *out_code_points = glyph_code_points;
+    *out_code_points_size = 26;
+    return 1;
+}
+
+HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_point_index, htui_glyph const ** out_glyph, void * user_state){
+    if(memcmp(font.data, "internal_font", font.size)) return 0;
+
+    if(code_point_index > 'z' || code_point_index < 'a') return 0;
+
+    *out_glyph = glyphs + (code_point_index-'a');
+
+    return 1;
+}
 
 HT15_EXPORT bool8 ht15_initalize(void){
 
@@ -681,7 +750,18 @@ HT15_EXPORT bool8 ht15_run(void){
     u64 loop_time_target_us = 10000; //target loop time of 10ms
     u16 slowest_loop_time_us = 0;
     float rolling_average_loop_time_us = 0.0f;
+<<<<<<< HEAD
     u64 loop_start_us = time_us_64();
+=======
+    uint64_t loop_start_us = time_us_64();
+
+    htui_state ui_state;
+    u32 settings_button_id = 0;
+    bool8 in_settings = false;
+    printf("Initalize\n");
+    htui_initalize(200, 200, &ui_state, NULL);
+
+>>>>>>> 6ce1937 (looks like shit and is slow but does display something)
     while(1){
         poll_input();
 
@@ -701,26 +781,72 @@ HT15_EXPORT bool8 ht15_run(void){
             audio_beep(4000, 20, calculate_volume(current_volume));
         } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;
 
-        if(!(cycle & 63)){
-        // if(cycle % 100 == 0){
-            char voltage_string[6];
-            sprintf(voltage_string, "%.2fV", get_battery_voltage());
-            char channel_string[10];
-            snprintf(channel_string, 10, "CH %d", selected_channel);
-            // printf("%s\n", channel_string);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 50, "HT-15", 5, 1, SSD1681_FONT_24);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 8, 1, SSD1681_FONT_12);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
+        if(!(cycle & 0b111111)){
+            printf("trying to display settings\n");
 
+<<<<<<< HEAD
             char volume_string[10];
             u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
+=======
+            htui_area_info main_area_info = {
+                .type = htui_area_type_vertical,
+            };
+>>>>>>> 6ce1937 (looks like shit and is slow but does display something)
 
-            if(should_clean_display){
-                should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
-            } else {
-                ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
+            htui_begin_area(&ui_state, &main_area_info);
+                if(htui_button(&ui_state, &settings_button_id, "settings") == htui_component_state_pressed){
+                    in_settings = true;
+                }
+            htui_end(&ui_state);
+            if(!htui_end_and_render(&ui_state)){
+                printf("end and render failed.\n");
             }
+
+            
+            // ssd1681_wait_busy();
+            // ssd1681_set_window(100, 100, 199, 199);
+            // ssd1681_set_cursor(100, 100);
+            // ssd1681_write_cmd(CMD_WRITE_RAM_BW);
+            // ssd1681_write_data_buf(glyphs->data, (glyphs->width * glyphs->height)/8);
+
+            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+            // ssd1681_write_data(0x00);
+            // ssd1681_write_data(0x80);
+            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+            // ssd1681_write_data(0xFE);
+            // ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+
+
+            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+            // ssd1681_write_data(0x00);
+            // ssd1681_write_data(0x80);
+            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+            // ssd1681_write_data(0xFE);
+            // ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+
+            // ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 50, "HT-15", 5, 1, SSD1681_FONT_24);
+            // ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
+
+
+        // if(cycle % 100 == 0){
+            //char voltage_string[6];
+            //sprintf(voltage_string, "%.2fV", get_battery_voltage());
+            //char channel_string[10];
+            //snprintf(channel_string, 10, "CH %d", selected_channel);
+            //// printf("%s\n", channel_string);
+            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 8, 1, SSD1681_FONT_12);
+            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
+
+            //char volume_string[10];
+            //int writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
+            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, writen, 1, SSD1681_FONT_8);
+
+            //if(should_clean_display){
+            //    should_clean_display = ssd1681_write_buffer_and_update_if_readyh(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
+            //} else {
+            //    ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
+            //}
             
         }
 

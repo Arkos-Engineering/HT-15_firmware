@@ -9,8 +9,7 @@
 #if !defined(PICO_SSD1681_H)
 #define PICO_SSD1681_H
 
-#include <stdint.h>
-#include <stdbool.h>
+#include "definitions.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -198,7 +197,8 @@ int ssd1681_fill_rect(ssd1681_color_t color, uint8_t left, uint8_t top, uint8_t 
  * @param img Image buffer (1 bit per pixel, row-major)
  * @return 0 on success
  */
-int ssd1681_draw_picture(ssd1681_color_t color, uint8_t left, uint8_t top, uint8_t right, uint8_t bottom, const uint8_t *img);
+i32 ssd1681_draw_picture(ssd1681_color_t color, uint8_t left, uint8_t top, uint8_t right, uint8_t bottom, const uint8_t *img);
+i32 ssd1681_draw_buffer(ssd1681_color_t color, uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint8_t *img);
 
 /**
  * @brief Set soft start parameters
@@ -336,9 +336,6 @@ static void ssd1681_write_cmd(uint8_t cmd)
     sleep_us(1);
 }
 
-/**
- * @brief Write data byte
- */
 static void ssd1681_write_data(uint8_t data)
 {
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
@@ -355,9 +352,6 @@ static void ssd1681_write_data(uint8_t data)
     sleep_us(1);
 }
 
-/**
- * @brief Write data buffer
- */
 static void ssd1681_write_data_buf(const uint8_t *data, uint16_t len)
 {
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
@@ -380,9 +374,6 @@ static void ssd1681_write_data_buf(const uint8_t *data, uint16_t len)
     sleep_us(1);
 }
 
-/**
- * @brief Reset the display
- */
 static void ssd1681_reset(void)
 {
     gpio_put(g_ssd1681.config.pin_rst, 1);
@@ -820,9 +811,6 @@ int ssd1681_update(uint8_t update_type)
     return 0;
 }
 
-/**
- * @brief Write a point
- */
 int ssd1681_write_point(ssd1681_color_t color, uint8_t x, uint8_t y, uint8_t data)
 {
     if (!g_ssd1681.initialized) return -1;
@@ -844,9 +832,6 @@ int ssd1681_write_point(ssd1681_color_t color, uint8_t x, uint8_t y, uint8_t dat
     return 0;
 }
 
-/**
- * @brief Read a point
- */
 int ssd1681_read_point(ssd1681_color_t color, uint8_t x, uint8_t y, uint8_t *data)
 {
     if (!g_ssd1681.initialized) return -1;
@@ -864,9 +849,6 @@ int ssd1681_read_point(ssd1681_color_t color, uint8_t x, uint8_t y, uint8_t *dat
     return 0;
 }
 
-/**
- * @brief Draw string (simplified - needs font data)
- */
 int ssd1681_draw_string(ssd1681_color_t color, uint8_t x, uint8_t y,
                         const char *str, uint16_t len, uint8_t data,
                         uint8_t font_size)
@@ -924,9 +906,7 @@ int ssd1681_fill_rect(ssd1681_color_t color, uint8_t left, uint8_t top,
 /**
  * @brief Draw picture
  */
-int ssd1681_draw_picture(ssd1681_color_t color, uint8_t left, uint8_t top,
-                         uint8_t right, uint8_t bottom, const uint8_t *img)
-{
+i32 ssd1681_draw_picture(ssd1681_color_t color, uint8_t left, uint8_t top, uint8_t right, uint8_t bottom, const uint8_t *img) {
     if (!g_ssd1681.initialized) return -1;
     if (!img) return -2;
     if (left >= DISPLAY_WIDTH || top >= DISPLAY_HEIGHT) return -3;
@@ -946,6 +926,35 @@ int ssd1681_draw_picture(ssd1681_color_t color, uint8_t left, uint8_t top,
         }
     }
     
+    return 0;
+}
+
+i32 ssd1681_draw_buffer(ssd1681_color_t color, uint16_t x, uint16_t y, uint16_t width, uint16_t height, const uint8_t *buffer) {
+    if (!g_ssd1681.initialized) return -1;
+    if (!buffer) return -2;
+    if (x >= DISPLAY_WIDTH || y >= DISPLAY_HEIGHT) return -3;
+    if (width == 0 || height == 0) return -4;
+    if ((x + width) > DISPLAY_WIDTH || (y + height) > DISPLAY_HEIGHT) return -5;
+
+    uint16_t bytes_per_line = (width + 7) / 8;
+
+    for (uint16_t py = 0; py < height; py++) {
+        for (uint16_t px = 0; px < width; px++) {
+            uint16_t img_byte = py * bytes_per_line + (px / 8);
+            uint8_t img_bit = 7 - (px % 8);
+
+            uint8_t pixel =
+                (buffer[img_byte] & (1 << img_bit)) ? 1 : 0;
+
+            ssd1681_write_point(
+                color,
+                x + px,
+                y + py,
+                pixel
+            );
+        }
+    }
+
     return 0;
 }
 
