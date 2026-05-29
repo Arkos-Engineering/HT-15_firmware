@@ -303,7 +303,7 @@ static void display_init(){
     ssd1681_config_t display_config;
     ssd1681_get_default_config_3wire(&display_config);
     display_config.spi_port = 1;
-    display_config.spi_baudrate = 75 * MHZ; //TODO - Ben 2026-02-23; There is a bug where the display will only work between 70MHz and 75MHz. It should be capped at 20MHz according to the datasheet, so this is very strange. Need to investigate further. For now just set it to 75MHz which seems to work reliably.
+    display_config.spi_baudrate = 20 * MHZ;
     display_config.spi_mode = SSD1681_SPI_3WIRE;
     display_config.pin_mosi = pin_spi1_sdi;
     display_config.pin_sck = pin_spi1_clk;
