@@ -258,6 +258,9 @@ void ssd1681_get_default_config_3wire(ssd1681_config_t *config);
 #define DISPLAY_HEIGHT 200
 #define BYTES_PER_ROW  (DISPLAY_WIDTH / 8)
 
+#define SSD1681_DISPLAY_UPDATE_FULL     0xF7
+#define SSD1681_DISPLAY_UPDATE_PARTIAL  0xFF
+
 /* Global state */
 static struct {
     ssd1681_config_t config;
@@ -306,11 +309,7 @@ static void ssd1681_spi_write_byte(uint8_t data)
     if (g_ssd1681.config.spi_mode == SSD1681_SPI_3WIRE) {
         /* 3-wire: Send 9-bit frame (D/C + 8 data bits) */
         uint16_t frame = ((uint16_t)g_ssd1681.dc_state << 8) | data;
-        while (!spi_is_writable(g_ssd1681.spi)) tight_loop_contents();
-        spi_get_hw(g_ssd1681.spi)->dr = frame;
-        while (spi_is_busy(g_ssd1681.spi)) tight_loop_contents();
-
-        // spi_write16_blocking(g_ssd1681.spi, &frame, 1);
+        spi_write16_blocking(g_ssd1681.spi, &frame, 1);
     } else {
         /* 4-wire: Standard 8-bit SPI */
         spi_write_blocking(g_ssd1681.spi, &data, 1);
@@ -556,14 +555,15 @@ int ssd1681_init(const ssd1681_config_t *config)
     ssd1681_write_cmd(CMD_DRIVER_OUTPUT_CONTROL);
     ssd1681_write_data(0xC7);  /* 200 - 1 */
     ssd1681_write_data(0x00);
-    ssd1681_write_data(0x02);
+    // ssd1681_write_data(0x02);
+    ssd1681_write_data(0x01);
 
     // ssd1681_set_soft_start(SSD1681_SOFTSTART_DRIVE_STRENGTH_0, SSD1681_SOFTSTART_TIME_40MS, SSD1681_SOFTSTART_MIN_OFF_4_6);
     
     /* Data entry mode */
     ssd1681_write_cmd(CMD_DATA_ENTRY_MODE);
     ssd1681_write_data(0x01);  /* Y decrement, X increment */
-    
+    // ssd1681_write_data(0x03);  /* Y decrement, X increment */
     /* Set window */
     ssd1681_set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1);
     
@@ -681,6 +681,18 @@ int ssd1681_set_soft_start(ssd1681_softstart_drive_strength_t strength,  ssd1681
     return 0;
 }
 
+static void ssd1681_trigger_update(uint8_t update_sequence, bool wait_for_completion)
+{
+    ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+    ssd1681_write_data(update_sequence);
+    ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+
+    if (wait_for_completion) {
+        ssd1681_wait_busy();
+    }
+}
+
+
 /**
  * @brief Update the display if display is ready
  * @return 1 on update, 0 if display is busy, -2 if invalid update type
@@ -697,64 +709,29 @@ int ssd1681_write_buffer_and_update_if_ready(uint8_t update_type)
 
     if (update_type == SSD1681_UPDATE_CLEAN_FULL) {
         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
-
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xF6);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_FULL, false);
         
     } else if(update_type == SSD1681_UPDATE_FAST_PARTIAL) {
         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
-
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xFE);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_PARTIAL, false);
 
     } else if(update_type == SSD1681_UPDATE_FAST_FULL) {
+        ssd1681_set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1);
+        ssd1681_set_cursor(0, 0);
         ssd1681_write_cmd(CMD_WRITE_RAM_BW);
         for (uint16_t i = 0; i < sizeof(g_ssd1681.black_gram); i++) {
             ssd1681_write_data(0xFF);
         }
 
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xFE);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
-    
-        ssd1681_wait_busy();
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_PARTIAL, true);
 
         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
-
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xFE);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_PARTIAL, false);
 
     } else if(update_type == SSD1681_UPDATE_CLEAN_FULL_AGGRESSIVE) {
         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
-
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xF6);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
-        ssd1681_wait_busy();
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xF6);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_FULL, true);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_FULL, false);
     } else {
         return -2; // Invalid update type
     }
@@ -773,44 +750,151 @@ int ssd1681_update(uint8_t update_type)
 
 
     if (update_type == SSD1681_UPDATE_CLEAN_FULL) {
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xF6);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_FULL, true);
         
     } else if(update_type == SSD1681_UPDATE_FAST_PARTIAL) {
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xFE);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_PARTIAL, true);
 
     } else if(update_type == SSD1681_UPDATE_FAST_FULL) {
         return -3; // Not supported in this function
 
     } else if(update_type == SSD1681_UPDATE_CLEAN_FULL_AGGRESSIVE) {
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xF6);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
-        ssd1681_wait_busy();
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-        ssd1681_write_data(0x00);
-        ssd1681_write_data(0x80);
-        ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-        ssd1681_write_data(0xF6);
-        ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_FULL, true);
+        ssd1681_trigger_update(SSD1681_DISPLAY_UPDATE_FULL, true);
     } else {
         return -2; // Invalid update type
     }
     return 0;
 }
+// /**
+//  * @brief Update the display if display is ready
+//  * @return 1 on update, 0 if display is busy, -2 if invalid update type
+//  * @param update_type Update type (see ssd1681_update_type_t in header file)
+//  */
+// int ssd1681_write_buffer_and_update_if_ready(uint8_t update_type)
+// {
+//     if (!g_ssd1681.initialized) return -1;
 
+//     if (gpio_get(g_ssd1681.config.pin_busy)) {
+//         return 0; // Display is busy
+//     }
+
+
+//     if (update_type == SSD1681_UPDATE_CLEAN_FULL) {
+//         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xF6);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        
+//     } else if(update_type == SSD1681_UPDATE_FAST_PARTIAL) {
+//         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xFE);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+
+//     } else if(update_type == SSD1681_UPDATE_FAST_FULL) {
+//         ssd1681_write_cmd(CMD_WRITE_RAM_BW);
+//         for (uint16_t i = 0; i < sizeof(g_ssd1681.black_gram); i++) {
+//             ssd1681_write_data(0xFF);
+//         }
+
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xFE);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+    
+//         ssd1681_wait_busy();
+
+//         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xFE);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+
+//     } else if(update_type == SSD1681_UPDATE_CLEAN_FULL_AGGRESSIVE) {
+//         ssd1681_write_buffer(SSD1681_COLOR_BLACK);
+
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xF6);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+//         ssd1681_wait_busy();
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xF6);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+//     } else {
+//         return -2; // Invalid update type
+//     }
+//     return 1;
+// }
+
+
+// /**
+//  * @brief Update the display
+//  */
+// int ssd1681_update(uint8_t update_type)
+// {
+//     if (!g_ssd1681.initialized) return -1;
+
+//     ssd1681_wait_busy();
+
+
+//     if (update_type == SSD1681_UPDATE_CLEAN_FULL) {
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xF6);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+        
+//     } else if(update_type == SSD1681_UPDATE_FAST_PARTIAL) {
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xFE);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+
+//     } else if(update_type == SSD1681_UPDATE_FAST_FULL) {
+//         return -3; // Not supported in this function
+
+//     } else if(update_type == SSD1681_UPDATE_CLEAN_FULL_AGGRESSIVE) {
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xF6);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+//         ssd1681_wait_busy();
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
+//         ssd1681_write_data(0x00);
+//         ssd1681_write_data(0x80);
+//         ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
+//         ssd1681_write_data(0xF6);
+//         ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
+//     } else {
+//         return -2; // Invalid update type
+//     }
+//     return 0;
+// }
 int ssd1681_write_point(ssd1681_color_t color, uint8_t x, uint8_t y, uint8_t data)
 {
     if (!g_ssd1681.initialized) return -1;
