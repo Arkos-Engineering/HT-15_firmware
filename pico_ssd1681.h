@@ -562,8 +562,9 @@ int ssd1681_init(const ssd1681_config_t *config)
     
     /* Data entry mode */
     ssd1681_write_cmd(CMD_DATA_ENTRY_MODE);
-    ssd1681_write_data(0x01);  /* Y decrement, X increment */
-    // ssd1681_write_data(0x03);  /* Y decrement, X increment */
+    // ssd1681_write_data(0x01);  /* Y decrement, X increment */
+    ssd1681_write_data(0x03);  /* Y decrement, X increment */
+
     /* Set window */
     ssd1681_set_window(0, 0, DISPLAY_WIDTH - 1, DISPLAY_HEIGHT - 1);
     
@@ -681,7 +682,10 @@ int ssd1681_set_soft_start(ssd1681_softstart_drive_strength_t strength,  ssd1681
     return 0;
 }
 
-static void ssd1681_trigger_update(uint8_t update_sequence, bool wait_for_completion)
+/**
+ * @brief send the command to do the update, optional block until update is complete
+ */
+static void ssd1681_trigger_update(u8 update_sequence, bool wait_for_completion)
 {
     ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
     ssd1681_write_data(update_sequence);
@@ -698,7 +702,7 @@ static void ssd1681_trigger_update(uint8_t update_sequence, bool wait_for_comple
  * @return 1 on update, 0 if display is busy, -2 if invalid update type
  * @param update_type Update type (see ssd1681_update_type_t in header file)
  */
-int ssd1681_write_buffer_and_update_if_ready(uint8_t update_type)
+int ssd1681_write_buffer_and_update_if_ready(u8 update_type)
 {
     if (!g_ssd1681.initialized) return -1;
 
