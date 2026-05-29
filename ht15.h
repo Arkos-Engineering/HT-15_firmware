@@ -779,12 +779,17 @@ HT15_EXPORT bool8 ht15_run(void){
         if(!(cycle & 0b111111)){
             printf("trying to display settings\n");
 
+            //holdover from the old UI, New UI does not refresh the screen before trying to draw to it. Also added my voltage and volume back until we can integrate it to the new UI
+            if(should_clean_display){
+            //    ssd1681_wait_busy();
+               should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
+            }
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
             char channel_string[10];
             snprintf(channel_string, 10, "CH %d", selected_channel);
-            // printf("%s\n", channel_string);
-            // ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 8, 1, SSD1681_FONT_12);
+
+
             ssd1681_draw_string(SSD1681_COLOR_BLACK, 130, 10, voltage_string, 5, 1, SSD1681_FONT_8);
             char volume_string[10];
             u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
@@ -802,7 +807,6 @@ HT15_EXPORT bool8 ht15_run(void){
                 printf("end and render failed.\n");
             }
 
-            
             // ssd1681_wait_busy();
             // ssd1681_set_window(100, 100, 199, 199);
             // ssd1681_set_cursor(100, 100);
