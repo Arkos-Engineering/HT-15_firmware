@@ -324,13 +324,10 @@ u8 rfmodule_2m70cm_set_upsampler(rfmodule_2m70cm_state_t *dev, u8 factor);
 bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
 u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz);
 rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data);
-rfmodule_error_code_t rfmodule_2m70cm_set_tx(rfmodule_2m70cm_state_t *dev, bool state);
-rfmodule_error_code_t rfmodule_2m70cm_set_rx(rfmodule_2m70cm_state_t *dev, bool state);
+rfmodule_error_code_t rfmodule_2m70cm_set_tx(rfmodule_2m70cm_state_t *dev, bool8 state);
+rfmodule_error_code_t rfmodule_2m70cm_set_rx(rfmodule_2m70cm_state_t *dev, bool8 state);
 f32 cc1200_set_output_level(rfmodule_2m70cm_state_t *dev, f32 dbm);
 f32 rfmodule_2m70cm_set_output_dbm(rfmodule_2m70cm_state_t *dev, f32 dbm);
-
-
-
 
 
 #if defined(RFMODULE_2M70CM_IMPLEMENTATION)

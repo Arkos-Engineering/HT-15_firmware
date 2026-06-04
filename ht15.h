@@ -20,9 +20,9 @@ HT15_EXPORT bool8 ht15_run(void);
 #endif
 
 /* NO_CHECKIN */ #define HT15_IMPLEMENTATION
-#if defined(HT15_IMPLEMENTATION)
+#if defined(HT15_IMPLEMENTATION) | defined(MOCK_RADIO)
 
-
+#if !defined(MOCK_RADIO)
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -39,7 +39,6 @@ HT15_EXPORT bool8 ht15_run(void);
 #include "hardware/clocks.h"
 #include <pico/bootrom.h>
 
-
 #define HT15_UTIL_IMPLEMENTATION
 #include "util.h"
 
@@ -50,10 +49,7 @@ HT15_EXPORT bool8 ht15_run(void);
 #include "pico_tlv320dac3100.h"
 
 #define RFMODULE_2M70CM_IMPLEMENTATION
-#include "rfmodule_2M70CM.h"
-
-
-
+#include "pico_rfmodule_2M70CM.h"
 
 #include "quadrature_encoder.pio.h"
 
@@ -394,32 +390,6 @@ static void audio_amp_set_volume(u8 volume){
     tlv320_set_channel_volume(&audioamp, 1, vol);   /* Right channel */
 }
 
-static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
-    // Sample rate is 48kHz based on our clock divider configuration
-    const u32 sample_rate = 48000;
-    
-    // Frequency must be less than sample_rate/4 per datasheet
-    if (frequency_hz >= sample_rate / 4) {
-        frequency_hz = sample_rate / 4 - 1;
-    }
-    
-    // Configure the beep tone (sin/cos coefficients and length)
-    // This calculates the proper phase increment for the DDS
-    if (!tlv320_configure_beep_tone(&audioamp, (f32)frequency_hz, duration_ms, sample_rate)) {
-        printf("Failed to configure beep tone\n");
-        return;
-    }
-    
-    // Set beep volume (0dB max, -61dB min)
-    // Using same volume for both channels
-    tlv320_set_beep_volume(&audioamp, volume_db, volume_db);
-    
-    // Start the beep
-    tlv320_enable_beep(&audioamp, true);
-    
-    // printf("Beep: %dHz, %dms, %ddB\n", frequency_hz, duration_ms, volume_db);
-}
-
 static void audio_codec_init(){
     audio_amp_reset_hard();
 
@@ -501,7 +471,6 @@ static void mic_init(){
     
 }
 
-/* TODO@Zea as of December 20 2025 add knobs */
 static void poll_input(){
     u32 columns = array_size(button_power_pin);
     u32 rows = array_size(button_sense_pin);
@@ -622,8 +591,11 @@ HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_
     return 1;
 }
 
+#endif /*!defined(MOCK_RADIO)*/
+
 HT15_EXPORT bool8 ht15_initalize(void){
 
+#if !defined(MOCK_RADIO)
     gpio_init(pin_led_status);
     gpio_set_dir(pin_led_status, GPIO_OUT);
     gpio_put(pin_led_status, 1);
@@ -696,9 +668,40 @@ HT15_EXPORT bool8 ht15_initalize(void){
     adc_init();
     adc_gpio_init(pin_v_bat);
     adc_gpio_init(pin_pot_volume);
+#else
 
+#endif
     return 1;
 }
+
+static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
+#if !defined(MOCK_RADIO)
+    // Sample rate is 48kHz based on our clock divider configuration
+    const u32 sample_rate = 48000;
+    
+    // Frequency must be less than sample_rate/4 per datasheet
+    if (frequency_hz >= sample_rate / 4) {
+        frequency_hz = sample_rate / 4 - 1;
+    }
+    
+    // Configure the beep tone (sin/cos coefficients and length)
+    // This calculates the proper phase increment for the DDS
+    if (!tlv320_configure_beep_tone(&audioamp, (f32)frequency_hz, duration_ms, sample_rate)) {
+        printf("Failed to configure beep tone\n");
+        return;
+    }
+    
+    // Set beep volume (0dB max, -61dB min)
+    // Using same volume for both channels
+    tlv320_set_beep_volume(&audioamp, volume_db, volume_db);
+    
+    // Start the beep
+    tlv320_enable_beep(&audioamp, true);
+    
+    // printf("Beep: %dHz, %dms, %ddB\n", frequency_hz, duration_ms, volume_db);
+#endif
+}
+
 
 u64 realtime_loop_rate_hz = AUDIO_SAMPLE_RATE;
 void ht15_run_realtime_core(void){
@@ -768,7 +771,7 @@ HT15_EXPORT bool8 ht15_run(void){
             if(key == key_enter && key_states[key] == key_state_pressed){
                 should_clean_display = 1;
             }
-        } 
+        }
 
         /* if(any_key_held){ if((cycle & 0b1111) == 0b1111) led_status_value = !led_status_value; }
         else */ if(any_key_pressed){
@@ -806,51 +809,6 @@ HT15_EXPORT bool8 ht15_run(void){
             if(!htui_end_and_render(&ui_state)){
                 printf("end and render failed.\n");
             }
-
-            // ssd1681_wait_busy();
-            // ssd1681_set_window(100, 100, 199, 199);
-            // ssd1681_set_cursor(100, 100);
-            // ssd1681_write_cmd(CMD_WRITE_RAM_BW);
-            // ssd1681_write_data_buf(glyphs->data, (glyphs->width * glyphs->height)/8);
-
-            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-            // ssd1681_write_data(0x00);
-            // ssd1681_write_data(0x80);
-            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-            // ssd1681_write_data(0xFE);
-            // ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
-
-
-            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL);
-            // ssd1681_write_data(0x00);
-            // ssd1681_write_data(0x80);
-            // ssd1681_write_cmd(CMD_DISPLAY_UPDATE_CONTROL_2);
-            // ssd1681_write_data(0xFE);
-            // ssd1681_write_cmd(CMD_MASTER_ACTIVATION);
-
-            // ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 50, "HT-15", 5, 1, SSD1681_FONT_24);
-            // ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
-
-
-        // if(cycle % 100 == 0){
-            //char voltage_string[6];
-            //sprintf(voltage_string, "%.2fV", get_battery_voltage());
-            //char channel_string[10];
-            //snprintf(channel_string, 10, "CH %d", selected_channel);
-            //// printf("%s\n", channel_string);
-            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 40, 75, channel_string, 8, 1, SSD1681_FONT_12);
-            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
-
-            //char volume_string[10];
-            //int writen = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
-            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, writen, 1, SSD1681_FONT_8);
-
-            //if(should_clean_display){
-            //    should_clean_display = ssd1681_write_buffer_and_update_if_readyh(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
-            //} else {
-            //    ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
-            //}
-            
         }
 
         rf_transmit(439*MHZ, true, 25, key_states[key_ptt] == key_state_pressed);
