@@ -1,75 +1,67 @@
 ; need to write my own for the current pinout (proto). Will correct the pinout for next build
+; pin 0 is BCLK, 1 is DI, 2 is LRCLK
+
+; =====================================================================
+; I2S input for SPH0645LM4H-B (I2S slave mic)
+;
+; Pin mapping (relative to the base pin assigned in C):
+;   base+0 : BCLK   (side-set, output)
+;   base+1 : DI     (input from mic)
+;   base+2 : LRCLK  (set pin, output)
+;
+; LRCLK must run at exactly BCLK / 64.
+;
+; Target for 8 kHz final output:
+;   Run mic at 16 kHz → BCLK = 1.024 MHz
+;   Downsample in software (with proper LPF before decimate).
+;
+; PIO clock target: ~6 × BCLK (because of loop overhead).
+; Example (sysclk=125 MHz, 16 kHz capture):
+;   divider = 125e6 / (6 * 1.024e6) ≈ 
+;
+; Data: 24-bit MSB-first. Typical post-processing:
+;   sample = (int32_t)raw >> 8;
+; One of the two half-frames will have the mic data.
+;
+; Timing:
+;   - Sample on rising BCLK (standard I2S).
+;   - Use logic analyzer on first run. The [1] delays give ~50% BCLK
+;     with current overhead. Tweak if your mic or layout needs it.
+; =====================================================================
 
 .program ht15_i2s_mic_in
 .side_set 1
-; =====================================================================
-; I2S input for SPH0645LM4H-B (and similar I2S mics)
-;
-; Pin mapping (relative to the base pin you assign in C code):
-;   base+0 : BCLK   (side-set pin, output, master clock)
-;   base+1 : DI     (data in pin, input from mic)
-;   base+2 : LRCLK  (word select / WS, output, master)
-;
-; This mic is an I2S slave. Master (PIO) must supply BCLK and LRCLK.
-; LRCLK frequency must be exactly BCLK / 64 (per datasheet OSR=64).
-;
-; Recommended operating point for 8 kHz final rate:
-;   Capture at 16 kHz (BCLK = 64 * 16000 = 1.024 MHz)
-;   Then downsample + low-pass filter in software to 8 kHz.
-;   (You can also try 32 kHz capture if you want more headroom.)
-;
-; PIO should run at approximately 2 * BCLK (so each bit takes ~2 PIO cycles).
-; Example: sysclk 125 MHz → divider ≈ 125e6 / (2 * 1.024e6) ≈ 61.035
-;
-; Data format:
-;   - Standard I2S (data changes on falling BCLK, sampled on rising)
-;   - 32 BCLK cycles per LRCLK half-period (left + right slots)
-;   - 24-bit audio, MSB first, in the upper bits of the 32-bit slot
-;   - One channel will contain the microphone data; the other is usually ~0
-;   - After push, software typically does: sample = (int32_t)rx_word >> 8;
-;
-; Timing notes:
-;   - Delays [n] control BCLK duty cycle and sampling phase.
-;   - Start with the values below. Use a logic analyzer on first bring-up.
-;   - Goal: sample the DI pin while BCLK is high (rising-edge sampling).
-;   - You may need to tweak the [1] values or add nops for your exact sysclk / divider.
-;
-; In C initialization (see below):
-;   - sideset_base = your_base_pin + 0
-;   - in_base      = your_base_pin + 1
-;   - set_base     = your_base_pin + 2
-;   - Configure SET pins for 1 output (LRCLK), side-set for 1 output (BCLK)
-;   - in_shift: left shift (MSB first), autopush at 32 bits
-;   - Set pin directions: BCLK+LRCLK = outputs, DI = input
-; =====================================================================
-
 .wrap_target
-    ; --- Left slot (LRCLK = 0) ---
-    set pins, 0            side 0     ; LRCLK low, BCLK low (start of left frame)
-    set x, 31
+    ; === Left half-frame (LRCLK = 0) ===
+    set x, 2              ; 4 iterations of the tight 6-cycle bit loop. BCLK needs to change on every 3rd cycle
+    set pins, 0 side 0     ; LRCLK low, BCLK low
 left:
-    nop                    side 1 [1] ; BCLK rises
-    in pins, 1             side 0 [1] ; sample DI while BCLK high → falling edge of this phase
+    nop side 0 [1]
+    in pins, 1 side 1 [2]
     jmp x-- left
-
-    ; --- Right slot (LRCLK = 1) ---
-    set pins, 1            side 0     ; LRCLK high, BCLK low (start of right frame)
-    set x, 31
+    
+    set pins, 1 side 0 [1]
+    in pins, 1 side 1 [1]
+    set x, 2
+    push noblock
+    nop [1]
+    
+    ; === Right half-frame (LRCLK = 1) ===
 right:
-    nop                    side 1 [1] ; BCLK rises
-    in pins, 1             side 0 [1] ; sample DI
-    jmp x-- right
-
-    push                               ; 32-bit word for this half-frame to RX FIFO
+    in pins, 1 side 1 [2]
+    jmp x-- right side 0 [2]
+    
+    set pins, 0 side 0 [1]
+    in pins, 1 side 1 []
+    set x, 2
+    push noblock
+    nop
+    jmp left
 .wrap
 
 % c-sdk {
 static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset,
                                                 uint base_pin, float clkdiv) {
-    // base_pin = your "pin 0" (BCLK)
-    // base_pin+1 = DI
-    // base_pin+2 = LRCLK
-
     pio_gpio_init(pio, base_pin + 0);  // BCLK
     pio_gpio_init(pio, base_pin + 1);  // DI
     pio_gpio_init(pio, base_pin + 2);  // LRCLK
@@ -80,16 +72,14 @@ static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset,
     sm_config_set_in_pins(&c, base_pin + 1);
     sm_config_set_set_pins(&c, base_pin + 2, 1);
 
-    // Directions
     pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 0, 1, true);   // BCLK out
     pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 2, 1, true);   // LRCLK out
     pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 1, 1, false);  // DI in
 
-    // Shift: left (MSB first good for I2S), autopush every 32 bits
-    sm_config_set_in_shift(&c, false, true, 32);
-
-    // Optional: join FIFOs if you only need RX
-    // sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    sm_config_set_in_shift(&c, false, true, 32);   // left shift, autopush @ 32
 
     pio_sm_init(pio, sm, offset, &c);
     pio_sm_set_clkdiv(pio, sm, clkdiv);
+    pio_sm_set_enabled(pio, sm, true);
+}
+}
