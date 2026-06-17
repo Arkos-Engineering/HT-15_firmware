@@ -11,17 +11,12 @@
 ;
 ; LRCLK must run at exactly BCLK / 64.
 ;
-; Target for 8 kHz final output:
-;   Run mic at 16 kHz → BCLK = 1.024 MHz
-;   Downsample in software (with proper LPF before decimate).
-;
-; PIO clock target: ~6 × BCLK (because of loop overhead).
+; PIO clock target: 8 × BCLK (because of loop overhead).
 ; Example (sysclk=125 MHz, 16 kHz capture):
-;   divider = 125e6 / (6 * 1.024e6) ≈ 
+;   divider = 125e6 / (8 * 1.024e6) ≈ 
 ;
-; Data: 24-bit MSB-first. Typical post-processing:
-;   sample = (int32_t)raw >> 8;
-; One of the two half-frames will have the mic data.
+; Data: 24-bit MSB-first.
+; BCLK should be 24*2*sample_rate
 ;
 ; Timing:
 ;   - Sample on rising BCLK (standard I2S).
@@ -30,33 +25,29 @@
 ; =====================================================================
 
 .program ht15_i2s_mic_in
-.side_set 1
-.wrap_target
-    ; === Left half-frame (LRCLK = 0) ===
-    set x, 2              ; 4 iterations of the tight 6-cycle bit loop. BCLK needs to change on every 3rd cycle
+.fifo rx
+.side_set 1 opt
+    ; init
+    set x, 22              ; 4 iterations of the tight 8-cycle bit loop. BCLK needs to change on every 4th cycle. 30 is 32 samples
+    set y, 1               ; LR tracker, 0 if L, 1 if R. We are sampling left first but if we set this to 1 it will init correctly
     set pins, 0 side 0     ; LRCLK low, BCLK low
-left:
-    nop side 0 [1]
+.wrap_target
+loop:
+    nop side 0 [3]
     in pins, 1 side 1 [2]
-    jmp x-- left
+    jmp x-- loop 
     
-    set pins, 1 side 0 [1]
-    in pins, 1 side 1 [1]
-    set x, 2
+    jmp y-- set_right side 0
+set_left:
+    set pins, 0
+    set y, 1
+    jmp read_last
+set_right:
+    set pins, 1 [2]
+read_last:
+    in pins, 1 side 1
     push noblock
-    nop [1]
-    
-    ; === Right half-frame (LRCLK = 1) ===
-right:
-    in pins, 1 side 1 [2]
-    jmp x-- right side 0 [2]
-    
-    set pins, 0 side 0 [1]
-    in pins, 1 side 1 []
-    set x, 2
-    push noblock
-    nop
-    jmp left
+    set x, 22 [1]
 .wrap
 
 % c-sdk {
