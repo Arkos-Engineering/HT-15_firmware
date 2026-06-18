@@ -380,9 +380,6 @@ static void audio_stop_system_clock(){
     gpio_put(pin_audioamp_masterclock, 0);
 }
 
-/* map 0-99 to -61 to 0 dB */
-static f32 calculate_volume(u8 volume){ return ((f32)volume * 0.619191f) - 61.0f; }
-
 /* set volume on audio amp (0-99) */
 static void audio_amp_set_volume(u8 volume){
     f32 vol = calculate_volume(volume);
@@ -674,6 +671,9 @@ HT15_EXPORT bool8 ht15_initalize(void){
     return 1;
 }
 
+/* map 0-99 to -61 to 0 dB */
+static f32 calculate_volume(u8 volume){ return ((f32)volume * 0.619191f) - 61.0f; }
+
 static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
 #if !defined(MOCK_RADIO)
     // Sample rate is 48kHz based on our clock divider configuration
@@ -785,7 +785,7 @@ HT15_EXPORT bool8 ht15_run(void){
             //holdover from the old UI, New UI does not refresh the screen before trying to draw to it. Also added my voltage and volume back until we can integrate it to the new UI
             if(should_clean_display){
             //    ssd1681_wait_busy();
-               should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
+               //should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
             }
             char voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
@@ -793,10 +793,10 @@ HT15_EXPORT bool8 ht15_run(void){
             snprintf(channel_string, 10, "CH %d", selected_channel);
 
 
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 130, 10, voltage_string, 5, 1, SSD1681_FONT_8);
+            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 130, 10, voltage_string, 5, 1, SSD1681_FONT_8);
             char volume_string[10];
             u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
+            //ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
             htui_area_info main_area_info = {
                 .type = htui_area_type_vertical,
             };
