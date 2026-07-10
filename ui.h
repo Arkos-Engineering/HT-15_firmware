@@ -240,7 +240,7 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
         fat_str * fonts;
         u32 fonts_size;
         htui_external_list_fonts(&fonts, &fonts_size, state->user_state);
-        printf("found %d fonts.\n", fonts_size);
+        // printf("found %d fonts.\n", fonts_size);
         if(fonts_size == 0) return 0;
 
         if(state->screen_state == htui_screen_state_unknown){

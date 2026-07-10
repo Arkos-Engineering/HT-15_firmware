@@ -54,8 +54,9 @@ HT15_EXPORT bool8 ht15_run(void);
 #include "quadrature_encoder.pio.h"
 
 #define PICO_I2S_IMPLEMENTATION
-#include "pico_i2s.h"
-// #include "i2s.pio.h"
+// Looks like we are going to have to rewire the PCB. This PIO library needs DIN, BCLK, WORDSELECT in that order. on the mic I need to swap SCL and SDO. On the codec, I need to swap SDI, SDO
+// #include "pico_i2s.h"
+#include "ht15_i2s_mic_in.pio.h"
 
 mutex_t rfmodule_mutex;
 
@@ -83,29 +84,6 @@ rfmodule_2m70cm_state_t rfmodule_state = {
     },
 };
 
-i2s_config i2s_config_mic = {
-    .fs = 32000,
-    .sck_mult = 384,
-    .bit_depth = 24,
-    // .sck_pin = pin_mic_scl,
-    .dout_pin = pin_mic_wordselect,
-    .din_pin = pin_mic_sdo,
-    .clock_pin_base = pin_mic_scl,
-    .sck_enable = false
-
-};
-// Looks like we are going to have to rewire the PCB. This PIO library needs DIN, BCLK, WORDSELECT in that order. on the mic I need to swap SCL and SDO. On the codec, I need to swap SDI, SDO
-
-// typedef struct i2s_config {
-//     u32 fs;
-//     u32 sck_mult;
-//     u8  bit_depth;
-//     u8  sck_pin;
-//     u8  dout_pin;
-//     u8  din_pin;
-//     u8  clock_pin_base;
-//     bool8     sck_enable;
-// } i2s_config;
 
 const u8 button_sense_pin[] = {pin_buttonmatrix_0, pin_buttonmatrix_1, pin_buttonmatrix_2, pin_buttonmatrix_3, pin_buttonmatrix_4, pin_buttonmatrix_5};
 const u8 button_power_pin[] = {pin_buttonmatrix_a, pin_buttonmatrix_b, pin_buttonmatrix_c, pin_buttonmatrix_d};
@@ -465,7 +443,8 @@ static void audio_codec_init(){
 }
 
 static void mic_init(){
-    
+    ht15_i2s_mic_in_program_init(I2S_MIC_PIO, I2S_MIC_SM, 0, pin_mic_scl, 1171.875);
+    printf("Mic initialized successfully!\n");
 }
 
 static void poll_input(){
@@ -538,7 +517,7 @@ HTUI_EXTERNAL_EXPORT bool8 htui_external_draw(htui_display_draw_command * comman
         ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_CLEAN_FULL_AGGRESSIVE);
     }
     
-    printf("COmmand x %d y %d w %d h %d \n", command->x, command->y, command->width, command->height);
+    // printf("COmmand x %d y %d w %d h %d \n", command->x, command->y, command->width, command->height);
     ifor(px, command->width){
         ifor(py, command->height){
             ssd1681_write_point(SSD1681_COLOR_BLACK, command->x + px, command->y + py, !test_bit_at_index(command->buffer, px + py * command->width));
@@ -654,8 +633,10 @@ HT15_EXPORT bool8 ht15_initalize(void){
     encoder_init();
     printf("initalize rf\n");
     rf_init();
-    printf("initalize audio\n");
+    printf("initalize audio codec\n");
     audio_codec_init();
+    printf("initalize mic\n");
+    mic_init();
 
     // printf("initalize sd\n");
     /* SD card needs to init before anything else because it starts in SD mode and needs to be switched to SPI mode before the display can be used, which shares the same SPI bus */
@@ -780,7 +761,7 @@ HT15_EXPORT bool8 ht15_run(void){
         } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;
 
         if(!(cycle & 0b111111)){
-            printf("trying to display settings\n");
+            // printf("trying to display settings\n");
 
             //holdover from the old UI, New UI does not refresh the screen before trying to draw to it. Also added my voltage and volume back until we can integrate it to the new UI
             if(should_clean_display){

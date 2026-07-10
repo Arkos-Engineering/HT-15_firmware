@@ -73,4 +73,4 @@ static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset,
     pio_sm_set_clkdiv(pio, sm, clkdiv);
     pio_sm_set_enabled(pio, sm, true);
 }
-}
+%}
