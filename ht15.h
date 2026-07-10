@@ -42,6 +42,9 @@ HT15_EXPORT bool8 ht15_run(void);
 #define HT15_UTIL_IMPLEMENTATION
 #include "util.h"
 
+#define HT15_AUDIO_TOOLKIT_IMPLEMENTATION
+#include "audio_toolkit.h"
+
 #define PICO_SSD1681_IMPLEMENTATION
 #include"pico_ssd1681.h"
 
@@ -442,8 +445,7 @@ static void audio_codec_init(){
     sleep_ms(50);
 }
 
-static void mic_init(){
-    u32 sample_rate = 16*KHZ;
+static void mic_init(u32 sample_rate){
     u32 sample_depth = 32;
     f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
     u8 offset = pio_add_program_at_offset(I2S_MIC_PIO, &ht15_i2s_mic_in_program, 0);
@@ -451,19 +453,12 @@ static void mic_init(){
     printf("Mic initialized successfully with clock divider of %f!\n", clock_div);
 }
 
-static u32 mic_get_sample_raw(){
-    u32 sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);
-    while(!sample){
-        sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);
-    }
-    return sample;
-}
 
-static f32 mic_get_sample_dc_block(f32 *dc_level, f32 strength){
-    f32 tone_current_sample = (f32)mic_get_sample_raw();
-    *dc_level = ((*dc_level * (1.0-strength)) + (tone_current_sample * strength));
-    return tone_current_sample - *dc_level;
-}
+// static f32 mic_get_sample_dc_block(f32 *dc_level, f32 strength){
+//     f32 current_sample = (f32)mic_get_sample_raw();
+//     *dc_level = ((*dc_level * (1.0-strength)) + (current_sample * strength));
+//     return current_sample - *dc_level;
+// }
 
 static void poll_input(){
     u32 columns = array_size(button_power_pin);
@@ -654,7 +649,7 @@ HT15_EXPORT bool8 ht15_initalize(void){
     printf("initalize audio codec\n");
     audio_codec_init();
     printf("initalize mic\n");
-    mic_init();
+    mic_init(AUDIO_MIC_OVERSAMPLING_RATIO*AUDIO_SAMPLE_RATE);
 
     // printf("initalize sd\n");
     /* SD card needs to init before anything else because it starts in SD mode and needs to be switched to SPI mode before the display can be used, which shares the same SPI bus */
@@ -704,19 +699,22 @@ static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
 
 u64 realtime_loop_rate_hz = AUDIO_SAMPLE_RATE;
 void ht15_run_realtime_core(void){
-    u16 tone_hz = 67;
+    u16 tone_hz = 1000;
+    bool8 transmit_tone = false;
 
+    // f32 mic_gain_multiplier = .0000001;
+    u16 mic_highpass_cutoff_hz = 500;
+    u16 mic_lowpass_cutoff_hz = 3000;
 
-    f32 mic_gain_multiplier = .0000001;
-    f32 mic_high_pass_cutoff_hz = 500.0;
+    f32 mic_gain_db = 75.0; // 93 is a good gain for a quiet room talking into the mic, however lets go lower for headroom and let the autogain take care of it
 
-    f32 mic_dc_block_strength = (2.0*3.1415*mic_high_pass_cutoff_hz)/(f32)realtime_loop_rate_hz;
-    f32 mic_dc_block_value = (f32)mic_get_sample_raw();
-    f32 mic_current_sample_float = mic_get_sample_dc_block(&mic_dc_block_value, mic_dc_block_strength);
+    f32 mic_highpass_tracker = (f32)(ht15_i2s_mic_get_one_sample_raw() >> 8);
+    f32 mic_lowpass_antialias_tracker = mic_highpass_tracker;
+    f32 mic_autogain_tracker = 1.0;
 
-    i8 tone_current_sample = 0;
+    i32 oversample_buffer[AUDIO_MIC_OVERSAMPLING_RATIO];
 
-    i8 sample_to_transmit = 0;
+    i32 sample_to_transmit = 0;
 
     u64 realtime_cycle_count = 0;
     u64 loop_time_target_us = 1000000/realtime_loop_rate_hz;
@@ -724,19 +722,31 @@ void ht15_run_realtime_core(void){
     float rolling_average_loop_time_us = 0.0f;
     u64 loop_start_us = time_us_64();
     while(true){
-        mic_current_sample_float = mic_get_sample_dc_block(&mic_dc_block_value, .001);
+        
+        // // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32)
+        for(i8 i=0; i<AUDIO_MIC_OVERSAMPLING_RATIO; i++){
+            oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw() >> 8), 4*KHZ, AUDIO_SAMPLE_RATE*AUDIO_MIC_OVERSAMPLING_RATIO);
+        }
+        sample_to_transmit = audio_toolkit_oversample_i32(oversample_buffer, AUDIO_MIC_OVERSAMPLING_RATIO); // decimate (well, average) to finish the oversampling
+        // sample_to_transmit = ht15_i2s_mic_get_one_sample_raw() >> 8;
+        // sample_to_transmit = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw() >> 8), 4*KHZ, AUDIO_SAMPLE_RATE);
+        // sample_to_transmit = oversample_buffer[0];
+
+        sample_to_transmit = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, sample_to_transmit, mic_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and to not interfere with the CTCSS tone
+        sample_to_transmit = audio_toolkit_gain_i32(sample_to_transmit, mic_gain_db); //apply mic gain
+
+
         if(rfmodule_state.is_keyed){
             if(mutex_try_enter(&rfmodule_mutex, 0)){
-                tone_current_sample = (i8)(sin(((float)time_us_32()/1000000.0)*6.283185*tone_hz)*64);
-                
-                if(mic_current_sample_float*mic_gain_multiplier > 64.0){
-                    sample_to_transmit = 64;
-                } else if(mic_current_sample_float*mic_gain_multiplier < -63.0){
-                    sample_to_transmit = -63;
-                } else{
-                    sample_to_transmit = mic_current_sample_float * mic_gain_multiplier;
+                //do audiogain on signal path so far; should be only mic data
+                // sample_to_transmit = audio_toolkit_autogain_i32(&mic_autogain_tracker, sample_to_transmit, 0.5, 0.01, 10.0, 0.01, 200, AUDIO_SAMPLE_RATE);
+                sample_to_transmit = audio_toolkit_autogain_i32(&mic_autogain_tracker, sample_to_transmit, -6, -20, 25, .01, .3, AUDIO_SAMPLE_RATE);
+
+                if(transmit_tone){
+                    sample_to_transmit += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
                 }
-                rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, sample_to_transmit);
+                // printf("%i\n", sample_to_transmit);
+                rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, sample_to_transmit/33554432); // transmit (and shrink sample_to_transmit from 32 to 7 bits)
 
                 mutex_exit(&rfmodule_mutex);
             }
