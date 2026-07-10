@@ -706,7 +706,7 @@ void ht15_run_realtime_core(void){
     u16 mic_highpass_cutoff_hz = 500;
     u16 mic_lowpass_cutoff_hz = 3000;
 
-    f32 mic_gain_db = 75.0; // 93 is a good gain for a quiet room talking into the mic, however lets go lower for headroom and let the autogain take care of it
+    f32 mic_gain_db = 60.0; // 93 is a good gain for a quiet room talking into the mic, however lets go lower for headroom and let the autogain take care of it
 
     f32 mic_highpass_tracker = (f32)(ht15_i2s_mic_get_one_sample_raw() >> 8);
     f32 mic_lowpass_antialias_tracker = mic_highpass_tracker;
@@ -739,7 +739,8 @@ void ht15_run_realtime_core(void){
         if(rfmodule_state.is_keyed){
             if(mutex_try_enter(&rfmodule_mutex, 0)){
                 //do audiogain on signal path so far; should be only mic data
-                sample_to_transmit = audio_toolkit_autogain_i32(&mic_autogain_tracker, sample_to_transmit, -6.0, -20.0, 25.0, .01, .3, AUDIO_SAMPLE_RATE);
+                sample_to_transmit = audio_toolkit_autogain_i32(&mic_autogain_tracker, sample_to_transmit, -6.0, -20.0, 15.0, .01, .3, AUDIO_SAMPLE_RATE);
+                printf("Total Mic Gain: %f\n", -audio_toolkit_linear_to_db(mic_autogain_tracker) + mic_gain_db);
 
                 if(transmit_tone){
                     sample_to_transmit += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
