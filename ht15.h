@@ -443,8 +443,26 @@ static void audio_codec_init(){
 }
 
 static void mic_init(){
-    ht15_i2s_mic_in_program_init(I2S_MIC_PIO, I2S_MIC_SM, 0, pin_mic_scl, 1171.875);
-    printf("Mic initialized successfully!\n");
+    u32 sample_rate = 16*KHZ;
+    u32 sample_depth = 32;
+    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
+    u8 offset = pio_add_program_at_offset(I2S_MIC_PIO, &ht15_i2s_mic_in_program, 0);
+    ht15_i2s_mic_in_program_init(I2S_MIC_PIO, I2S_MIC_SM, offset, pin_mic_scl, clock_div);
+    printf("Mic initialized successfully with clock divider of %f!\n", clock_div);
+}
+
+static u32 mic_get_sample_raw(){
+    u32 sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);
+    while(!sample){
+        sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);
+    }
+    return sample;
+}
+
+static f32 mic_get_sample_dc_block(f32 *dc_level, f32 strength){
+    f32 tone_current_sample = (f32)mic_get_sample_raw();
+    *dc_level = ((*dc_level * (1.0-strength)) + (tone_current_sample * strength));
+    return tone_current_sample - *dc_level;
 }
 
 static void poll_input(){
@@ -686,9 +704,19 @@ static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
 
 u64 realtime_loop_rate_hz = AUDIO_SAMPLE_RATE;
 void ht15_run_realtime_core(void){
-    u16 tone_hz = 700;
+    u16 tone_hz = 67;
 
-    i8 current_sample = 0;
+
+    f32 mic_gain_multiplier = .0000001;
+    f32 mic_high_pass_cutoff_hz = 500.0;
+
+    f32 mic_dc_block_strength = (2.0*3.1415*mic_high_pass_cutoff_hz)/(f32)realtime_loop_rate_hz;
+    f32 mic_dc_block_value = (f32)mic_get_sample_raw();
+    f32 mic_current_sample_float = mic_get_sample_dc_block(&mic_dc_block_value, mic_dc_block_strength);
+
+    i8 tone_current_sample = 0;
+
+    i8 sample_to_transmit = 0;
 
     u64 realtime_cycle_count = 0;
     u64 loop_time_target_us = 1000000/realtime_loop_rate_hz;
@@ -696,11 +724,20 @@ void ht15_run_realtime_core(void){
     float rolling_average_loop_time_us = 0.0f;
     u64 loop_start_us = time_us_64();
     while(true){
+        mic_current_sample_float = mic_get_sample_dc_block(&mic_dc_block_value, .001);
         if(rfmodule_state.is_keyed){
             if(mutex_try_enter(&rfmodule_mutex, 0)){
-                current_sample = (i8)(sin(((float)time_us_32()/1000000.0)*6.283185*tone_hz)*64);
-                // printf("%i\n", current_sample);
-                rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, (u8)current_sample);
+                tone_current_sample = (i8)(sin(((float)time_us_32()/1000000.0)*6.283185*tone_hz)*64);
+                
+                if(mic_current_sample_float*mic_gain_multiplier > 64.0){
+                    sample_to_transmit = 64;
+                } else if(mic_current_sample_float*mic_gain_multiplier < -63.0){
+                    sample_to_transmit = -63;
+                } else{
+                    sample_to_transmit = mic_current_sample_float * mic_gain_multiplier;
+                }
+                rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, sample_to_transmit);
+
                 mutex_exit(&rfmodule_mutex);
             }
         }
@@ -735,6 +772,7 @@ HT15_EXPORT bool8 ht15_run(void){
     float rolling_average_loop_time_us = 0.0f;
     u64 loop_start_us = time_us_64();
 
+
     htui_state ui_state;
     u32 settings_button_id = 0;
     bool8 in_settings = false;
@@ -755,7 +793,7 @@ HT15_EXPORT bool8 ht15_run(void){
         }
 
         /* if(any_key_held){ if((cycle & 0b1111) == 0b1111) led_status_value = !led_status_value; }
-        else */ if(any_key_pressed){
+        else */ if(any_key_pressed && !key_states[key_ptt]){
             led_status_value = 0;
             audio_beep(4000, 20, calculate_volume(current_volume));
         } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;

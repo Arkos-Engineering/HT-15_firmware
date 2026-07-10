@@ -28,7 +28,7 @@
 .fifo rx
 .side_set 1 opt
     ; init
-    set x, 22              ; 4 iterations of the tight 8-cycle bit loop. BCLK needs to change on every 4th cycle. 30 is 32 samples
+    set x, 30             ; 4 iterations of the tight 8-cycle bit loop. BCLK needs to change on every 4th cycle. 30 is 32 samples
     set y, 1               ; LR tracker, 0 if L, 1 if R. We are sampling left first but if we set this to 1 it will init correctly
     set pins, 0 side 0     ; LRCLK low, BCLK low
 .wrap_target
@@ -47,7 +47,7 @@ set_right:
 read_last:
     in pins, 1 side 1
     push noblock
-    set x, 22 [1]
+    set x, 30 [1]
 .wrap
 
 % c-sdk {
@@ -67,7 +67,7 @@ static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset,
     pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 2, 1, true);   // LRCLK out
     pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 1, 1, false);  // DI in
 
-    sm_config_set_in_shift(&c, false, true, 32);   // left shift, autopush @ 32
+    sm_config_set_in_shift(&c, false, false, 32);   // left shift, autopush @ 32
 
     pio_sm_init(pio, sm, offset, &c);
     pio_sm_set_clkdiv(pio, sm, clkdiv);
