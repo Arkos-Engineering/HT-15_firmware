@@ -721,20 +721,16 @@ void ht15_run_realtime_core(void){
     u16 slowest_loop_time_us = 0;
     float rolling_average_loop_time_us = 0.0f;
     u64 loop_start_us = time_us_64();
+
     while(true){
-        
-        // // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32)
+        // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32)
         for(i8 i=0; i<AUDIO_MIC_OVERSAMPLING_RATIO; i++){
             oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw() >> 8), 4*KHZ, AUDIO_SAMPLE_RATE*AUDIO_MIC_OVERSAMPLING_RATIO);
         }
         sample_to_transmit = audio_toolkit_oversample_i32(oversample_buffer, AUDIO_MIC_OVERSAMPLING_RATIO); // decimate (well, average) to finish the oversampling
-        // sample_to_transmit = ht15_i2s_mic_get_one_sample_raw() >> 8;
-        // sample_to_transmit = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw() >> 8), 4*KHZ, AUDIO_SAMPLE_RATE);
-        // sample_to_transmit = oversample_buffer[0];
 
         sample_to_transmit = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, sample_to_transmit, mic_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and to not interfere with the CTCSS tone
         sample_to_transmit = audio_toolkit_gain_i32(sample_to_transmit, mic_gain_db); //apply mic gain
-
 
         if(rfmodule_state.is_keyed){
             if(mutex_try_enter(&rfmodule_mutex, 0)){
@@ -744,7 +740,7 @@ void ht15_run_realtime_core(void){
                 if(transmit_tone){
                     sample_to_transmit += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
                 }
-                // printf("%i\n", sample_to_transmit);
+
                 rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, sample_to_transmit/33554432); // transmit (and shrink sample_to_transmit from 32 to 7 bits)
 
                 mutex_exit(&rfmodule_mutex);
@@ -765,7 +761,6 @@ void ht15_run_realtime_core(void){
         rolling_average_loop_time_us = (rolling_average_loop_time_us  *0.999f) + ((float)loop_start_us * 0.001f);
         loop_start_us = time_us_64();
     }
-    // printf
 
 }
 

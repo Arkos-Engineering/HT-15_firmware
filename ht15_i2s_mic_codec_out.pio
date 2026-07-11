@@ -1,0 +1,78 @@
+; pin 0 is DO, 1 is BCLK, 2 is LRCLK, 3 is SDO
+
+; =====================================================================
+; I2S I/O for TLV320AIC3100 (I2S slave mic)
+;
+; LRCLK must run at exactly BCLK / 64.
+;
+; PIO clock target: 8 × BCLK (because of loop overhead).
+; Example (sysclk=125 MHz, 16 kHz capture):
+;   divider = 125e6 / (8 * 1.024e6) ≈ 
+;
+; Data: 24-bit MSB-first.
+; BCLK should be 24*2*sample_rate
+;
+; Timing:
+;   - Sample on rising BCLK (standard I2S).
+;   - Use logic analyzer on first run. The [1] delays give ~50% BCLK
+;     with current overhead. Tweak if your mic or layout needs it.
+; =====================================================================
+
+.program ht15_i2s_codec_cout
+.fifo rx
+.side_set 1 opt
+    ; init
+    set x, 30             ; 4 iterations of the tight 8-cycle bit loop. BCLK needs to change on every 4th cycle. 30 is 32 samples
+    set y, 1               ; LR tracker, 0 if L, 1 if R. We are sampling left first but if we set this to 1 it will init correctly
+    set pins, 0 side 0     ; LRCLK low, BCLK low
+.wrap_target
+loop:
+    nop side 0 [3]
+    in pins, 1 side 1 [2]
+    jmp x-- loop 
+    
+    jmp y-- set_right side 0
+set_left:
+    set pins, 0
+    set y, 1
+    jmp read_last
+set_right:
+    set pins, 1 [2]
+read_last:
+    in pins, 1 side 1
+    push noblock
+    set x, 30 [1]
+.wrap
+
+% c-sdk {
+static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset,
+                                                uint base_pin, float clkdiv) {
+    pio_gpio_init(pio, base_pin + 0);  // BCLK
+    pio_gpio_init(pio, base_pin + 1);  // DI
+    pio_gpio_init(pio, base_pin + 2);  // LRCLK
+
+    pio_sm_config c = ht15_i2s_mic_in_program_get_default_config(offset);
+
+    sm_config_set_sideset_pins(&c, base_pin + 0);
+    sm_config_set_in_pins(&c, base_pin + 1);
+    sm_config_set_set_pins(&c, base_pin + 2, 1);
+
+    pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 0, 1, true);   // BCLK out
+    pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 2, 1, true);   // LRCLK out
+    pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 1, 1, false);  // DI in
+
+    sm_config_set_in_shift(&c, false, false, 32);   // left shift, autopush @ 32
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_clkdiv(pio, sm, clkdiv);
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+static inline u32 ht15_i2s_mic_get_one_sample_raw(){
+    u32 sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);
+    while(!sample){
+        sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);
+    }
+    return sample;
+}
+%}
