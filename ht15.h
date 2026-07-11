@@ -56,10 +56,13 @@ HT15_EXPORT bool8 ht15_run(void);
 
 #include "quadrature_encoder.pio.h"
 
-#define PICO_I2S_IMPLEMENTATION
+#define PICO_I2S_MIC_IMPLEMENTATION
 // Looks like we are going to have to rewire the PCB. This PIO library needs DIN, BCLK, WORDSELECT in that order. on the mic I need to swap SCL and SDO. On the codec, I need to swap SDI, SDO
 // #include "pico_i2s.h"
 #include "ht15_i2s_mic_in.pio.h"
+
+#define PICO_I2S_CODEC_IMPLEMENTATION
+#include "ht15_i2s_codec_io.pio.h"
 
 mutex_t rfmodule_mutex;
 
@@ -368,7 +371,35 @@ static void audio_amp_set_volume(u8 volume){
     tlv320_set_channel_volume(&audioamp, 1, vol);   /* Right channel */
 }
 
+static void audio_codec_I2S_init(u32 sample_rate){
+    u32 sample_depth = 32;
+    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
+    i8 offset = pio_add_program(I2S_CODEC_PIO, &ht15_i2s_codec_io_program);
+    if(offset >= 0){
+        ht15_i2s_codec_io_init(I2S_CODEC_PIO, I2S_CODEC_SM, offset, pin_audioamp_sdi, clock_div);
+        printf("Codec I2S initialized successfully with clock divider of %f!\n", clock_div);
+        return;
+    } 
+    printf("Codec I2S failed to init. Could not fit program in PIO memory");
+}
+
+static void mic_init(u32 sample_rate){
+    u32 sample_depth = 32;
+    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
+    i8 offset = pio_add_program(I2S_MIC_PIO, &ht15_i2s_mic_in_program);
+    if(offset >= 0){
+        ht15_i2s_mic_in_program_init(I2S_MIC_PIO, I2S_MIC_SM, offset, pin_mic_scl, clock_div);
+        printf("Mic I2S initialized successfully with clock divider of %f!\n", clock_div);
+        return;
+    } 
+    printf("Mic failed to init. Could not fit program in PIO memory");
+}
+
 static void audio_codec_init(){
+    // init I2S PIO block
+    audio_codec_I2S_init(AUDIO_SAMPLE_RATE*AUDIO_CODEC_OVERSAMPLING_RATIO);
+
+
     audio_amp_reset_hard();
 
     // Initialize TLV320DAC3100 audio amplifier over I2C and init audio_config->audioamp
@@ -444,34 +475,6 @@ static void audio_codec_init(){
     // Wait for output drivers to stabilize
     sleep_ms(50);
 
-    
-    //init I2S PIO block
-    audio_codec_I2S_init(AUDIO_SAMPLE_RATE*AUDIO_CODEC_OVERSAMPLING_RATIO);
-
-}
-
-static void audio_codec_I2S_init(u32 sample_rate){
-    u32 sample_depth = 32;
-    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
-    i8 offset = pio_add_program(I2S_CODEC_PIO, &ht15_i2s_codec_io_program);
-    if(offset >= 0){
-        ht15_i2s_codec_io_program_init(I2S_MIC_PIO, I2S_MIC_SM, offset, pin_mic_scl, clock_div);
-        printf("Codec I2S initialized successfully with clock divider of %f!\n", clock_div);
-        return;
-    } 
-    printf("Codec I2S failed to init. Could not fit program in PIO memory");
-}
-
-static void mic_init(u32 sample_rate){
-    u32 sample_depth = 32;
-    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
-    i8 offset = pio_add_program(I2S_MIC_PIO, &ht15_i2s_mic_in_program);
-    if(offset >= 0){
-        ht15_i2s_mic_in_program_init(I2S_MIC_PIO, I2S_MIC_SM, offset, pin_mic_scl, clock_div);
-        printf("Mic I2S initialized successfully with clock divider of %f!\n", clock_div);
-        return;
-    } 
-    printf("Mic failed to init. Could not fit program in PIO memory");
 }
 
 static void poll_input(){
