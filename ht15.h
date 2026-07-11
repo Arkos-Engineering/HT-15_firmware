@@ -443,22 +443,36 @@ static void audio_codec_init(){
     
     // Wait for output drivers to stabilize
     sleep_ms(50);
+
+    
+    //init I2S PIO block
+    audio_codec_I2S_init(AUDIO_SAMPLE_RATE*AUDIO_CODEC_OVERSAMPLING_RATIO);
+
+}
+
+static void audio_codec_I2S_init(u32 sample_rate){
+    u32 sample_depth = 32;
+    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
+    i8 offset = pio_add_program(I2S_CODEC_PIO, &ht15_i2s_codec_io_program);
+    if(offset >= 0){
+        ht15_i2s_codec_io_program_init(I2S_MIC_PIO, I2S_MIC_SM, offset, pin_mic_scl, clock_div);
+        printf("Codec I2S initialized successfully with clock divider of %f!\n", clock_div);
+        return;
+    } 
+    printf("Codec I2S failed to init. Could not fit program in PIO memory");
 }
 
 static void mic_init(u32 sample_rate){
     u32 sample_depth = 32;
     f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
-    u8 offset = pio_add_program_at_offset(I2S_MIC_PIO, &ht15_i2s_mic_in_program, 0);
-    ht15_i2s_mic_in_program_init(I2S_MIC_PIO, I2S_MIC_SM, offset, pin_mic_scl, clock_div);
-    printf("Mic initialized successfully with clock divider of %f!\n", clock_div);
+    i8 offset = pio_add_program(I2S_MIC_PIO, &ht15_i2s_mic_in_program);
+    if(offset >= 0){
+        ht15_i2s_mic_in_program_init(I2S_MIC_PIO, I2S_MIC_SM, offset, pin_mic_scl, clock_div);
+        printf("Mic I2S initialized successfully with clock divider of %f!\n", clock_div);
+        return;
+    } 
+    printf("Mic failed to init. Could not fit program in PIO memory");
 }
-
-
-// static f32 mic_get_sample_dc_block(f32 *dc_level, f32 strength){
-//     f32 current_sample = (f32)mic_get_sample_raw();
-//     *dc_level = ((*dc_level * (1.0-strength)) + (current_sample * strength));
-//     return current_sample - *dc_level;
-// }
 
 static void poll_input(){
     u32 columns = array_size(button_power_pin);
@@ -708,7 +722,7 @@ void ht15_run_realtime_core(void){
 
     f32 mic_gain_db = 75.0; // 93 is a good gain for a quiet room talking into the mic, however lets go lower for headroom and let the autogain take care of it
 
-    f32 mic_highpass_tracker = (f32)(ht15_i2s_mic_get_one_sample_raw() >> 8);
+    f32 mic_highpass_tracker = (f32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8);
     f32 mic_lowpass_antialias_tracker = mic_highpass_tracker;
     f32 mic_autogain_tracker = 1.0;
 
@@ -725,7 +739,7 @@ void ht15_run_realtime_core(void){
     while(true){
         // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32)
         for(i8 i=0; i<AUDIO_MIC_OVERSAMPLING_RATIO; i++){
-            oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw() >> 8), 4*KHZ, AUDIO_SAMPLE_RATE*AUDIO_MIC_OVERSAMPLING_RATIO);
+            oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8), 4*KHZ, AUDIO_SAMPLE_RATE*AUDIO_MIC_OVERSAMPLING_RATIO);
         }
         sample_to_transmit = audio_toolkit_oversample_i32(oversample_buffer, AUDIO_MIC_OVERSAMPLING_RATIO); // decimate (well, average) to finish the oversampling
 

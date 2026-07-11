@@ -50,16 +50,20 @@ typedef struct{
 
 //PIO assignments, PIO block and state machine
 
-#define ENCODER_SM 0
-#define I2S_MIC_PIO pio1
+#define I2S_MIC_PIO pio0
 #define I2S_MIC_SM 0
-#define I2S_HEADSET_MIC_PIO pio1
-#define I2S_HEADSET_MIC_SM 1
-#define I2S_OUTPUT_PIO pio1
-#define I2S_OUTPUT_SM 2
+#define I2S_CODEC_PIO pio0
+#define I2S_CODEC_SM 1
 
-#define AUDIO_SAMPLE_RATE 8*KHZ // this is the sample rate for both codec2 and AMBE2+, along with most narrowband FM radios, so thats what i guess we are using
+#define ENCODER_PIO pio1
+#define ENCODER_SM 0
+
+#define AUDIO_SAMPLE_RATE 8*KHZ // this is the sample rate for both codec2 and AMBE2+, along with most narrowband FM radios, so thats what I guess we are using.
 #define AUDIO_MIC_OVERSAMPLING_RATIO 4
+
+#define AUDIO_CODEC_OVERSAMPLING_RATIO 4
+
+
 
 #define PINS \
     X(buttonmatrix_a,       0)\
