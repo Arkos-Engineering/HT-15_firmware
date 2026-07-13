@@ -373,7 +373,7 @@ static void audio_amp_set_volume(u8 volume){
 
 static void audio_codec_I2S_init(u32 sample_rate){
     u32 sample_depth = 32;
-    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
+    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 10 * 2));
     i8 offset = pio_add_program(I2S_CODEC_PIO, &ht15_i2s_codec_io_program);
     if(offset >= 0){
         ht15_i2s_codec_io_init(I2S_CODEC_PIO, I2S_CODEC_SM, offset, pin_audioamp_sdi, clock_div);
@@ -430,7 +430,7 @@ static void audio_codec_init(){
 
     // Configure codec interface - I2S, 16-bit, codec is master (bclk_out=true, wclk_out=true)
     // IMPORTANT: Must be set BEFORE configuring BCLK dividers per datasheet power-up sequence
-    tlv320_set_codec_interface(&audioamp, TLV320DAC3100_FORMAT_I2S, TLV320DAC3100_DATA_LEN_16, true, true);
+    tlv320_set_codec_interface(&audioamp, TLV320DAC3100_FORMAT_I2S, TLV320DAC3100_DATA_LEN_32, false, false);
 
     // Configure BCLK generation:
     tlv320_set_bclk_n(&audioamp, true, 1);  // Enable BCLK divider with N=1
@@ -721,17 +721,22 @@ void ht15_run_realtime_core(void){
 
     // f32 mic_gain_multiplier = .0000001;
     u16 mic_highpass_cutoff_hz = 500;
-    u16 mic_lowpass_cutoff_hz = 3000;
+    u16 mic_lowpass_cutoff_hz = 4000;
 
     f32 mic_gain_db = 75.0; // 93 is a good gain for a quiet room talking into the mic, however lets go lower for headroom and let the autogain take care of it
 
     f32 mic_highpass_tracker = (f32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8);
     f32 mic_lowpass_antialias_tracker = mic_highpass_tracker;
     f32 mic_autogain_tracker = 1.0;
+    i32 mic_oversample_buffer[AUDIO_MIC_OVERSAMPLING_RATIO];
+    i32 tx_audio_sample = 0;
 
-    i32 oversample_buffer[AUDIO_MIC_OVERSAMPLING_RATIO];
-
-    i32 sample_to_transmit = 0;
+    u16 speaker_highpass_cutoff_hz = 500;
+    u16 speaker_lowpass_cutoff_hz = 4000;
+    f32 speaker_highpass_tracker = (f32)ht15_i2s_codec_io_get_one_sample_raw_blocking();
+    f32 speaker_lowpass_antialias_tracker = speaker_highpass_tracker;
+    i32 speaker_oversample_buffer[AUDIO_CODEC_OVERSAMPLING_RATIO];
+    i32 rx_audio_sample = 0;
 
     u64 realtime_cycle_count = 0;
     u64 loop_time_target_us = 1000000/realtime_loop_rate_hz;
@@ -740,28 +745,41 @@ void ht15_run_realtime_core(void){
     u64 loop_start_us = time_us_64();
 
     while(true){
+        
         // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32)
         for(i8 i=0; i<AUDIO_MIC_OVERSAMPLING_RATIO; i++){
-            oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8), 4*KHZ, AUDIO_SAMPLE_RATE*AUDIO_MIC_OVERSAMPLING_RATIO);
+            mic_oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8), mic_lowpass_cutoff_hz, AUDIO_SAMPLE_RATE*AUDIO_MIC_OVERSAMPLING_RATIO);
         }
-        sample_to_transmit = audio_toolkit_oversample_i32(oversample_buffer, AUDIO_MIC_OVERSAMPLING_RATIO); // decimate (well, average) to finish the oversampling
+        tx_audio_sample = audio_toolkit_oversample_i32(mic_oversample_buffer, AUDIO_MIC_OVERSAMPLING_RATIO); // decimate (well, average) to finish the oversampling
 
-        sample_to_transmit = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, sample_to_transmit, mic_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and to not interfere with the CTCSS tone
-        sample_to_transmit = audio_toolkit_gain_i32(sample_to_transmit, mic_gain_db); //apply mic gain
+        tx_audio_sample = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, tx_audio_sample, mic_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and to not interfere with the CTCSS tone
+        tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, mic_gain_db); //apply mic gain
 
+        //tx
         if(rfmodule_state.is_keyed){
+            // printf("RF Module Keyed");
             if(mutex_try_enter(&rfmodule_mutex, 0)){
                 //do audiogain on signal path so far; should be only mic data
-                sample_to_transmit = audio_toolkit_autogain_i32(&mic_autogain_tracker, sample_to_transmit, -6.0, -20.0, 25.0, .01, .3, AUDIO_SAMPLE_RATE);
+                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker, tx_audio_sample, -6.0, -20.0, 25.0, .01, .3, AUDIO_SAMPLE_RATE);
 
                 if(transmit_tone){
-                    sample_to_transmit += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
+                    tx_audio_sample += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
                 }
 
-                rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, sample_to_transmit/33554432); // transmit (and shrink sample_to_transmit from 32 to 7 bits)
+                rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, tx_audio_sample/33554432); // transmit (and shrink sample_to_transmit from 32 to 7 bits)
 
                 mutex_exit(&rfmodule_mutex);
             }
+        } else{ //rx
+            // printf("rx");
+            for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
+                rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
+                printf("Writing Sample to speaker: %i\n", rx_audio_sample);
+                ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
+                ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //R
+            }
+
+
         }
 
 
@@ -772,9 +790,9 @@ void ht15_run_realtime_core(void){
         if (loop_start_us > slowest_loop_time_us){
             slowest_loop_time_us = loop_start_us;
         }
-        // if(realtime_cycle_count%realtime_loop_rate == 0){
-        //     printf("realtime avg loop time microseconds: %f\n", rolling_average_loop_time_us);
-        // } 
+        if(realtime_cycle_count%8000 == 0){
+            printf("realtime avg loop time microseconds: %f\n", rolling_average_loop_time_us);
+        } 
         rolling_average_loop_time_us = (rolling_average_loop_time_us  *0.999f) + ((float)loop_start_us * 0.001f);
         loop_start_us = time_us_64();
     }

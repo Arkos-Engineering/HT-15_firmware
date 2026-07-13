@@ -3,7 +3,7 @@
 ; =====================================================================
 ; I2S I/O for TLV320AIC3100 (This is I2S Master)
 ;
-; PIO clock target: 8 × BCLK (because of loop overhead).
+; PIO clock target: 10 × BCLK (because of loop overhead).
 ; Example (sysclk=125 MHz, 16 kHz capture):
 ;   divider = 125e6 / (8 * 1.024e6) ≈ 
 ;
@@ -17,17 +17,17 @@
 .fifo txrx
 .side_set 1 opt
     ; init
-    set x, 30             ; 4 iterations of the tight 8-cycle bit loop. BCLK needs to change on every 4th cycle. 30 is 32 samples
+    set x, 30             ; 4 iterations of the tight 10-cycle bit loop. BCLK needs to change on every 5th cycle. 30 is 32 samples
     set y, 1               ; LR tracker, 0 if L, 1 if R. We are sampling left first but if we set this to 1 it will init correctly
     set pins, 0 side 0     ; LRCLK low, BCLK low
 .wrap_target
 loop:
-    nop side 0 [3]
-    in pins, 1 side 1 [1]
-    out pins, 1
+    nop side 0 [4]
+    in pins, 1 side 1
+    out pins, 1 [2]
     jmp x-- loop 
     
-    jmp y-- set_right side 0
+    jmp y-- set_right side 0 [1]
 set_left:
     set pins, 0
     set y, 1
@@ -37,6 +37,7 @@ set_right:
 read_last:
     in pins, 1 side 1
     out pins, 1
+    push noblock
     pull noblock
     set x, 30
 .wrap
@@ -62,7 +63,7 @@ static inline void ht15_i2s_codec_io_init(PIO pio, uint sm, uint offset,
     pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 2, 1, true);   // LRCLK out
     pio_sm_set_consecutive_pindirs(pio, sm, base_pin + 3, 1, false);  // DI in
 
-    sm_config_set_in_shift(&c, false, true, 32);   // left shift, autopush @ 32
+    sm_config_set_in_shift(&c, false, false, 32);   // left shift, autopush @ 32
     sm_config_set_out_shift(&c, false, false, 32);   // left shift, autopush off @ 32, it will stall on an empty bufer if autopush is on
 
     pio_sm_init(pio, sm, offset, &c);
@@ -78,7 +79,7 @@ static inline u32 ht15_i2s_codec_io_get_one_sample_raw_blocking(){
     return sample;
 }
 
-static inline void ht15_i2s_codec_io_put_one_sample_raw_blocking(u32 data){
+static inline void ht15_i2s_codec_io_put_one_sample_raw_blocking(i32 data){
     pio_sm_put_blocking(I2S_CODEC_PIO, I2S_CODEC_SM, data);
 }
 %}

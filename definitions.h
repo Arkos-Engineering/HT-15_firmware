@@ -61,7 +61,7 @@ typedef struct{
 #define AUDIO_SAMPLE_RATE 8*KHZ // this is the sample rate for both codec2 and AMBE2+, along with most narrowband FM radios, so thats what I guess we are using.
 #define AUDIO_MIC_OVERSAMPLING_RATIO 4
 
-#define AUDIO_CODEC_OVERSAMPLING_RATIO 4
+#define AUDIO_CODEC_OVERSAMPLING_RATIO 1
 
 
 
