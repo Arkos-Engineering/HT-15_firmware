@@ -723,17 +723,18 @@ void ht15_run_realtime_core(void){
     u16 mic_highpass_cutoff_hz = 500;
     u16 mic_lowpass_cutoff_hz = 4000;
 
-    f32 mic_gain_db = 60.0; // 93 is a good gain for a quiet room talking into the mic, however lets go lower for headroom and let the autogain take care of it
+    f32 mic_gain_db = 40.0f; // 93 is a good gain for a quiet room talking into the mic, however lets go lower for headroom and let the autogain take care of it
 
     f32 mic_highpass_tracker = (f32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8);
     f32 mic_lowpass_antialias_tracker = mic_highpass_tracker;
-    f32 mic_autogain_tracker = 1.0;
+    f32 mic_autogain_tracker_slow = 1.0f;
+    f32 mic_autogain_tracker_fast = 1.0f;
     i32 mic_oversample_buffer[AUDIO_MIC_OVERSAMPLING_RATIO];
     i32 tx_audio_sample = 0;
 
     u16 speaker_highpass_cutoff_hz = 500;
     u16 speaker_lowpass_cutoff_hz = 4000;
-    f32 speaker_highpass_tracker = (f32)ht15_i2s_codec_io_get_one_sample_raw_blocking();
+    f32 speaker_highpass_tracker = 0.0f;
     f32 speaker_lowpass_antialias_tracker = speaker_highpass_tracker;
     i32 speaker_oversample_buffer[AUDIO_CODEC_OVERSAMPLING_RATIO];
     i32 rx_audio_sample = 0;
@@ -760,7 +761,10 @@ void ht15_run_realtime_core(void){
             // printf("RF Module Keyed");
             if(mutex_try_enter(&rfmodule_mutex, 0)){
                 //do audiogain on signal path so far; should be only mic data
-                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker, tx_audio_sample, -6.0, -20.0, 25.0, .01, .3, AUDIO_SAMPLE_RATE);
+                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -27.0f, -25.0f, 25.0f, .1f, .2f, AUDIO_SAMPLE_RATE);
+                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -30.0f, -12.0f, 0.0f, .001f, .05f, AUDIO_SAMPLE_RATE);
+                tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 24.0f);
+                // printf("TX Audio Sample: %i\n", tx_audio_sample);
 
                 if(transmit_tone){
                     tx_audio_sample += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
@@ -774,7 +778,7 @@ void ht15_run_realtime_core(void){
             // printf("rx");
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
-                printf("Writing Sample to speaker: %i\n", rx_audio_sample);
+                // printf("Writing Sample to speaker: %i\n", rx_audio_sample);
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //R
             }
