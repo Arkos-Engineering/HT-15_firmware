@@ -458,7 +458,7 @@ static void audio_codec_init(){
     tlv320_set_dac_data_path(&audioamp, true, true, TLV320_DAC_PATH_NORMAL, TLV320_DAC_PATH_NORMAL, TLV320_VOLUME_STEP_2SAMPLE);
 
     // Unmute DAC channels
-    tlv320_set_dac_volume_control(&audioamp, true, true, TLV320_VOL_RIGHT_TO_LEFT);
+    tlv320_set_dac_volume_control(&audioamp, false, false, TLV320_VOL_RIGHT_TO_LEFT);
     
     // Set DAC digital volume (0dB for left and right channels)
     tlv320_set_channel_volume(&audioamp, false, 0);  // Left channel 0dB
@@ -476,6 +476,8 @@ static void audio_codec_init(){
     
     // Wait for output drivers to stabilize
     sleep_ms(50);
+
+    audio_amp_set_volume(current_volume);
 
 }
 
@@ -779,12 +781,15 @@ void ht15_run_realtime_core(void){
         } else{ //rx
             // printf("rx");
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
-                rx_audio_sample = audio_toolkit_generate_tone_i32(700, loop_start_us);
+                rx_audio_sample = audio_toolkit_generate_tone_i32(700, time_us_64());
 
-                rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and hopefully remove any clicks
-                rx_audio_sample = audio_toolkit_lowpass_filter_i32(&speaker_lowpass_tracker, rx_audio_sample, speaker_lowpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove high frequency from speaker
+                // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and hopefully remove any clicks
+                // rx_audio_sample = audio_toolkit_lowpass_filter_i32(&speaker_lowpass_tracker, rx_audio_sample, speaker_lowpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove high frequency from speaker
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //R
+                // ht15_i2s_codec_io_put_one_sample_raw_blocking((i32)0);
+                // ht15_i2s_codec_io_put_one_sample_raw_blocking((i32)0);
+
             }
 
 
@@ -811,6 +816,7 @@ HT15_EXPORT bool8 ht15_run(void){
     u32 cycle = 0;
     bool8 should_clean_display = 1;
 
+    poll_input(); // make sure curent_volume is set before launching the realtime core
     mutex_init(&rfmodule_mutex);
     multicore_launch_core1(ht15_run_realtime_core);
 
