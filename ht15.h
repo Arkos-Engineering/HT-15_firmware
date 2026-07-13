@@ -371,18 +371,6 @@ static void audio_amp_set_volume(u8 volume){
     tlv320_set_channel_volume(&audioamp, 1, vol);   /* Right channel */
 }
 
-static void audio_codec_I2S_init(u32 sample_rate){
-    u32 sample_depth = 32;
-    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 10 * 2));
-    i8 offset = pio_add_program(I2S_CODEC_PIO, &ht15_i2s_codec_io_program);
-    if(offset >= 0){
-        ht15_i2s_codec_io_init(I2S_CODEC_PIO, I2S_CODEC_SM, offset, pin_audioamp_sdi, clock_div);
-        printf("Codec I2S initialized successfully with clock divider of %f!\n", clock_div);
-        return;
-    } 
-    printf("Codec I2S failed to init. Could not fit program in PIO memory");
-}
-
 static void mic_init(u32 sample_rate){
     u32 sample_depth = 32;
     f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 8 * 2));
@@ -393,6 +381,18 @@ static void mic_init(u32 sample_rate){
         return;
     } 
     printf("Mic failed to init. Could not fit program in PIO memory");
+}
+
+static void audio_codec_I2S_init(u32 sample_rate){
+    u32 sample_depth = 32;
+    f32 clock_div = ((float)PROCESSOR_CLOCK_MHZ * MHZ)/((float)(sample_depth * sample_rate * 10 * 2));
+    i8 offset = pio_add_program(I2S_CODEC_PIO, &ht15_i2s_codec_io_program);
+    if(offset >= 0){
+        ht15_i2s_codec_io_init(I2S_CODEC_PIO, I2S_CODEC_SM, offset, pin_audioamp_sdi, clock_div);
+        printf("Codec I2S initialized successfully with clock divider of %f!\n", clock_div);
+        return;
+    } 
+    printf("Codec I2S failed to init. Could not fit program in PIO memory");
 }
 
 static void audio_codec_init(){
@@ -414,32 +414,30 @@ static void audio_codec_init(){
     tlv320_set_pll_clock_input(&audioamp, TLV320DAC3100_PLL_CLKIN_MCLK);
     sleep_ms(10);
     // Set codec clock input to PLL (12MHz from RP2350)
+    // tlv320_set_codec_clock_input(&audioamp, TLV320DAC3100_CODEC_CLKIN_PLL);
     tlv320_set_codec_clock_input(&audioamp, TLV320DAC3100_CODEC_CLKIN_PLL);
 
-    // Set clock dividers for 16kHz sample rate
-    // MCLK=12MHz, NDAC=3, MDAC=2, DOSR=125
-    // DAC_CLK = MCLK / NDAC = 12MHz / 3 = 4MHz
-    // DAC_MOD_CLK = DAC_CLK / MDAC = 4MHz / 2 = 2MHz  
-    // DAC_FS = DAC_MOD_CLK / DOSR = 2MHz / 125 = 16kHz
-    tlv320_set_ndac(&audioamp, true, 2);
+    // Set clock dividers for 8kHz sample rate
+    tlv320_set_ndac(&audioamp, true, 12);
     tlv320_set_mdac(&audioamp, true, 8);
     tlv320_set_dosr(&audioamp, 128);
-    tlv320_set_pll_values(&audioamp, 1, 1, 8, 1920); // Set PLL to multiply MCLK by 4 (12MHz * 4 = 48MHz PLL clock)
+    //PLL_CLK = CLK_IN * (R*(J+(D/10000)))/P
+    tlv320_set_pll_values(&audioamp, 1, 1, 8, 1920); // Set PLL to 98.304MHz
 
-    tlv320_power_pll(&audioamp, true);
+    // tlv320_power_pll(&audioamp, true);
 
-    // Configure codec interface - I2S, 16-bit, codec is master (bclk_out=true, wclk_out=true)
+    // Configure codec interface - I2S, 16-bit, codec is slave
     // IMPORTANT: Must be set BEFORE configuring BCLK dividers per datasheet power-up sequence
     tlv320_set_codec_interface(&audioamp, TLV320DAC3100_FORMAT_I2S, TLV320DAC3100_DATA_LEN_32, false, false);
 
     // Configure BCLK generation:
-    tlv320_set_bclk_n(&audioamp, true, 1);  // Enable BCLK divider with N=1
+    // tlv320_set_bclk_n(&audioamp, true, 1);  // Enable BCLK divider with N=1
     
     // Configure BCLK output behavior (Page 1, Reg 0x1D):
     // - invert_bclk=false: normal polarity
     // - active_when_powered_down=true: keep BCLK running 
     // - source=DAC_MOD_CLK: derive from DAC_MOD_CLK (2MHz) for cleaner division
-    tlv320_set_bclk_config(&audioamp, false, true, TLV320DAC3100_BCLK_SRC_DAC_MOD_CLK);
+    // tlv320_set_bclk_config(&audioamp, false, false, TLV320DAC3100_BCLK_SRC_DAC_MOD_CLK);
 
     // Configure timer/delay clock divider (Page 3, Reg 16)
     // For 12MHz MCLK, divider of 12 gives ~1MHz timer clock for beep generator
@@ -732,10 +730,10 @@ void ht15_run_realtime_core(void){
     i32 mic_oversample_buffer[AUDIO_MIC_OVERSAMPLING_RATIO];
     i32 tx_audio_sample = 0;
 
-    u16 speaker_highpass_cutoff_hz = 500;
+    u16 speaker_highpass_cutoff_hz = 10;
     u16 speaker_lowpass_cutoff_hz = 4000;
     f32 speaker_highpass_tracker = 0.0f;
-    f32 speaker_lowpass_antialias_tracker = speaker_highpass_tracker;
+    f32 speaker_lowpass_tracker = speaker_highpass_tracker;
     i32 speaker_oversample_buffer[AUDIO_CODEC_OVERSAMPLING_RATIO];
     i32 rx_audio_sample = 0;
 
@@ -760,16 +758,16 @@ void ht15_run_realtime_core(void){
         if(rfmodule_state.is_keyed){
             // printf("RF Module Keyed");
             if(mutex_try_enter(&rfmodule_mutex, 0)){
-                //do audiogain on signal path so far; should be only mic data
-                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -27.0f, -25.0f, 25.0f, .1f, .2f, AUDIO_SAMPLE_RATE);
-                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -30.0f, -12.0f, 0.0f, .001f, .05f, AUDIO_SAMPLE_RATE);
-                tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 24.0f);
-                // printf("TX Audio Sample: %i\n", tx_audio_sample);
+                //do autogain on signal path so far; should be only mic data
+                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -27.0f, -25.0f, 25.0f, .1f, .2f, AUDIO_SAMPLE_RATE); // autogain
+                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -30.0f, -12.0f, 0.0f, .001f, .05f, AUDIO_SAMPLE_RATE); // limiter targeting -30dBFS
 
+                tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 24.0f); //gain to -6dBFS (after limiter targets -30dBFS)
+
+                //add tone to audio to transmit
                 if(transmit_tone){
-                    tx_audio_sample += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
+                    tx_audio_sample += audio_toolkit_generate_tone_i32(tone_hz, loop_start_us);
                 }
-
                 rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, tx_audio_sample/33554432); // transmit (and shrink sample_to_transmit from 32 to 7 bits)
 
                 mutex_exit(&rfmodule_mutex);
@@ -777,8 +775,10 @@ void ht15_run_realtime_core(void){
         } else{ //rx
             // printf("rx");
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
-                rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
-                // printf("Writing Sample to speaker: %i\n", rx_audio_sample);
+                rx_audio_sample = audio_toolkit_generate_tone_i32(700, loop_start_us);
+
+                rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and hopefully remove any clicks
+                rx_audio_sample = audio_toolkit_lowpass_filter_i32(&speaker_lowpass_tracker, rx_audio_sample, speaker_lowpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove high frequency from speaker
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //R
             }
