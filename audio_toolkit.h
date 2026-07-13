@@ -180,10 +180,7 @@ static inline i32 audio_toolkit_autogain_i32(f32 *tracker,
         gain = max_lin;   /* full makeup on silence */
     }
     
-<<<<<<< HEAD
-=======
     // printf("AGC Gain: %f\n", audio_toolkit_linear_to_db(gain));
->>>>>>> 98ee4ce80db2324f1ccee689b173ae85165558c3
 
     return (i32)(x * gain);
 }

@@ -760,12 +760,7 @@ void ht15_run_realtime_core(void){
             // printf("RF Module Keyed");
             if(mutex_try_enter(&rfmodule_mutex, 0)){
                 //do audiogain on signal path so far; should be only mic data
-<<<<<<< HEAD
-                sample_to_transmit = audio_toolkit_autogain_i32(&mic_autogain_tracker, sample_to_transmit, -6.0, -20.0, 15.0, .01, .3, AUDIO_SAMPLE_RATE);
-                printf("Total Mic Gain: %f\n", -audio_toolkit_linear_to_db(mic_autogain_tracker) + mic_gain_db);
-=======
                 tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker, tx_audio_sample, -6.0, -20.0, 25.0, .01, .3, AUDIO_SAMPLE_RATE);
->>>>>>> 98ee4ce80db2324f1ccee689b173ae85165558c3
 
                 if(transmit_tone){
                     tx_audio_sample += audio_toolkit_generate_tone_i32(tone_hz, time_us_64());
