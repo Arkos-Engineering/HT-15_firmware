@@ -417,6 +417,9 @@ static void audio_codec_init(){
     // tlv320_set_codec_clock_input(&audioamp, TLV320DAC3100_CODEC_CLKIN_PLL);
     tlv320_set_codec_clock_input(&audioamp, TLV320DAC3100_CODEC_CLKIN_PLL);
 
+    if(AUDIO_SAMPLE_RATE != 8*KHZ){
+        printf("Sample rates other than 8KHZ are currently not supported by the audio codec. Defaulting to 8KHZ. Some things may not work as expected");
+    }
     // Set clock dividers for 8kHz sample rate
     tlv320_set_ndac(&audioamp, true, 12);
     tlv320_set_mdac(&audioamp, true, 8);
@@ -424,7 +427,8 @@ static void audio_codec_init(){
     //PLL_CLK = CLK_IN * (R*(J+(D/10000)))/P
     tlv320_set_pll_values(&audioamp, 1, 1, 8, 1920); // Set PLL to 98.304MHz
 
-    // tlv320_power_pll(&audioamp, true);
+
+    tlv320_power_pll(&audioamp, true);
 
     // Configure codec interface - I2S, 16-bit, codec is slave
     // IMPORTANT: Must be set BEFORE configuring BCLK dividers per datasheet power-up sequence
@@ -686,7 +690,7 @@ static f32 calculate_volume(u8 volume){ return ((f32)volume * 0.619191f) - 61.0f
 static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
 #if !defined(MOCK_RADIO)
     // Sample rate is 48kHz based on our clock divider configuration
-    const u32 sample_rate = 48000;
+    const u32 sample_rate = AUDIO_SAMPLE_RATE;
     
     // Frequency must be less than sample_rate/4 per datasheet
     if (frequency_hz >= sample_rate / 4) {
@@ -838,7 +842,7 @@ HT15_EXPORT bool8 ht15_run(void){
         /* if(any_key_held){ if((cycle & 0b1111) == 0b1111) led_status_value = !led_status_value; }
         else */ if(any_key_pressed && !key_states[key_ptt]){
             led_status_value = 0;
-            audio_beep(4000, 20, calculate_volume(current_volume));
+            audio_beep(4000, 50, calculate_volume(current_volume));
         } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;
 
         if(!(cycle & 0b111111)){
