@@ -757,36 +757,37 @@ void ht15_run_realtime_core(void){
     u64 loop_target_end_us = current_time_us + loop_time_target_us;
 
     while(true){
-        
-        // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32)
-        for(i8 i=0; i<AUDIO_MIC_OVERSAMPLING_RATIO; i++){
-            mic_oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8), mic_lowpass_cutoff_hz, realtime_loop_rate_hz*AUDIO_MIC_OVERSAMPLING_RATIO);
-        }
-        tx_audio_sample = audio_toolkit_oversample_i32(mic_oversample_buffer, AUDIO_MIC_OVERSAMPLING_RATIO); // decimate (well, average) to finish the oversampling
-
-        tx_audio_sample = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, tx_audio_sample, mic_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and to not interfere with the CTCSS tone
-        tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, mic_gain_db); //apply mic gain
 
         //tx
         if(rfmodule_state.is_keyed){
+            // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32). This oversampling can cause a block if the PIO FIFO is not already full. TODO DMA will solve this - Ben 07/14/2026
+            for(i8 i=0; i<AUDIO_MIC_OVERSAMPLING_RATIO; i++){
+                mic_oversample_buffer[i] = audio_toolkit_lowpass_filter_i32(&mic_lowpass_antialias_tracker, (i32)(ht15_i2s_mic_get_one_sample_raw_blocking() >> 8), mic_lowpass_cutoff_hz, realtime_loop_rate_hz*AUDIO_MIC_OVERSAMPLING_RATIO);
+            }
+            tx_audio_sample = audio_toolkit_oversample_i32(mic_oversample_buffer, AUDIO_MIC_OVERSAMPLING_RATIO); // decimate (well, average) to finish the oversampling
+
+            tx_audio_sample = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, tx_audio_sample, mic_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and to not interfere with the CTCSS tone
+            tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, mic_gain_db); //apply mic gain
+
+            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -27.0f, -25.0f, 25.0f, .1f, .2f, realtime_loop_rate_hz); // autogain
+            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -30.0f, -12.0f, 0.0f, .001f, .05f, realtime_loop_rate_hz); // limiter targeting -30dBFS
+
+            tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 24.0f); //gain to -6dBFS (after limiter targets -30dBFS)
+
+            //add tone to audio to transmit
+            if(transmit_tone){
+                tx_audio_sample += audio_toolkit_generate_tone_i32(tone_hz, loop_target_end_us);
+            }
+
             // printf("RF Module Keyed");
             if(mutex_try_enter(&rfmodule_mutex, 0)){
                 //do autogain on signal path so far; should be only mic data
-                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -27.0f, -25.0f, 25.0f, .1f, .2f, realtime_loop_rate_hz); // autogain
-                tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -30.0f, -12.0f, 0.0f, .001f, .05f, realtime_loop_rate_hz); // limiter targeting -30dBFS
-
-                tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 24.0f); //gain to -6dBFS (after limiter targets -30dBFS)
-
-                //add tone to audio to transmit
-                if(transmit_tone){
-                    tx_audio_sample += audio_toolkit_generate_tone_i32(tone_hz, loop_target_end_us);
-                }
                 rfmodule_2m70cm_set_tx_data_raw(&rfmodule_state, tx_audio_sample/33554432); // transmit (and shrink sample_to_transmit from 32 to 7 bits)
 
                 mutex_exit(&rfmodule_mutex);
             }
         } else{ //rx
-            // printf("rx");
+            // TODO implement DMA with configurable block size/sample rate/oversampling - Ben 04/14/2026
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
 
