@@ -411,10 +411,9 @@ static void audio_codec_init(){
     tlv320_set_dac_processing_block(&audioamp, 25);
 
     // Set PLL clock input to MCLK (12MHz from RP2350)
-    tlv320_set_pll_clock_input(&audioamp, TLV320DAC3100_PLL_CLKIN_MCLK);
+    tlv320_set_pll_clock_input(&audioamp, TLV320DAC3100_PLL_CLKIN_BCLK);
     sleep_ms(10);
     // Set codec clock input to PLL (12MHz from RP2350)
-    // tlv320_set_codec_clock_input(&audioamp, TLV320DAC3100_CODEC_CLKIN_PLL);
     tlv320_set_codec_clock_input(&audioamp, TLV320DAC3100_CODEC_CLKIN_PLL);
 
     if(AUDIO_SAMPLE_RATE != 8*KHZ){
@@ -425,12 +424,18 @@ static void audio_codec_init(){
     tlv320_set_mdac(&audioamp, true, 8);
     tlv320_set_dosr(&audioamp, 128);
     //PLL_CLK = CLK_IN * (R*(J+(D/10000)))/P
-    tlv320_set_pll_values(&audioamp, 1, 1, 8, 1920); // Set PLL to 98.304MHz
-
-
+    tlv320_set_pll_values(&audioamp, 1, 16, 12, 0); // Set PLL to 98.304MHz
     tlv320_power_pll(&audioamp, true);
 
-    // Configure codec interface - I2S, 16-bit, codec is slave
+    // tlv320_set_codec_clock_input(&audioamp, TLV320DAC3100_CODEC_CLKIN_BCLK);
+    // if(AUDIO_SAMPLE_RATE != 8*KHZ){
+    //      printf("Sample rates other than 8KHZ are currently not supported by the audio codec. Defaulting to 8KHZ. Some things may not work as expected");
+    // }
+    // tlv320_set_ndac(&audioamp, true, 1);
+    // tlv320_set_mdac(&audioamp, true, 1);
+    // tlv320_set_dosr(&audioamp, 64);
+
+    // Configure codec interface - I2S, 32-bit, codec is slave
     // IMPORTANT: Must be set BEFORE configuring BCLK dividers per datasheet power-up sequence
     tlv320_set_codec_interface(&audioamp, TLV320DAC3100_FORMAT_I2S, TLV320DAC3100_DATA_LEN_32, false, false);
 
@@ -746,6 +751,7 @@ void ht15_run_realtime_core(void){
 
     u64 realtime_cycle_count = 0;
     u64 loop_time_target_us = 1000000/realtime_loop_rate_hz;
+    // u64 loop_time_target_us = 120;
     u16 slowest_loop_time_us = 0;
     float rolling_average_loop_time_us = 0.0f;
     u64 loop_start_us = time_us_64();
@@ -784,7 +790,7 @@ void ht15_run_realtime_core(void){
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
 
-                rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and hopefully remove any clicks
+                // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and hopefully remove any clicks
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //R
                 // ht15_i2s_codec_io_put_one_sample_raw_blocking(0);
@@ -800,13 +806,13 @@ void ht15_run_realtime_core(void){
         //control loop timing, track slowest loop time and rolling average for performance monitoring
         loop_start_us = time_us_64()-loop_start_us;
         sleep_us(loop_time_target_us>loop_start_us ? loop_time_target_us-loop_start_us : 0);
-        if (loop_start_us > slowest_loop_time_us){
-            slowest_loop_time_us = loop_start_us;
-        }
-        if(realtime_cycle_count%8000 == 0){
-            printf("realtime avg loop time microseconds: %f\n", rolling_average_loop_time_us);
-        } 
-        rolling_average_loop_time_us = (rolling_average_loop_time_us  *0.999f) + ((float)loop_start_us * 0.001f);
+        // if (loop_start_us > slowest_loop_time_us){
+        //     slowest_loop_time_us = loop_start_us;
+        // }
+        // if(realtime_cycle_count%8000 == 0){
+        //     printf("realtime avg loop time microseconds: %f\n", rolling_average_loop_time_us);
+        // } 
+        // rolling_average_loop_time_us = (rolling_average_loop_time_us  *0.999f) + ((float)loop_start_us * 0.001f);
         loop_start_us = time_us_64();
     }
 

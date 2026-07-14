@@ -32,7 +32,7 @@ static inline f32 audio_toolkit_linear_to_db(f32 linear);
  *                          Range: [INT32_MIN+1, INT32_MAX].
  */
 static inline i32 audio_toolkit_generate_tone_i32(u16 tone_hz, u64 current_time_us){
-    i32 tone_current_sample = (i32)(sin(((f32)current_time_us/1000000.0)*M_TWOPI*tone_hz)*0.5f*(f32)(INT32_MAX));
+    i32 tone_current_sample = (i32)(sin(((f32)current_time_us/1000000.0)*TAU*tone_hz)*0.5f*(f32)(INT32_MAX));
     return tone_current_sample;
 }
 
