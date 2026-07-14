@@ -473,6 +473,8 @@ static void audio_codec_init(){
     
     // Set speaker analog volume - route enabled, 0dB gain
     tlv320_set_spk_volume(&audioamp, true, 0);
+
+    tlv320_set_bclk_offset(&audioamp, 1);
     
     // Wait for output drivers to stabilize
     sleep_ms(50);
@@ -737,7 +739,6 @@ void ht15_run_realtime_core(void){
     i32 tx_audio_sample = 0;
 
     u16 speaker_highpass_cutoff_hz = 10;
-    u16 speaker_lowpass_cutoff_hz = 4000;
     f32 speaker_highpass_tracker = 0.0f;
     f32 speaker_lowpass_tracker = speaker_highpass_tracker;
     i32 speaker_oversample_buffer[AUDIO_CODEC_OVERSAMPLING_RATIO];
@@ -781,14 +782,13 @@ void ht15_run_realtime_core(void){
         } else{ //rx
             // printf("rx");
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
-                rx_audio_sample = audio_toolkit_generate_tone_i32(700, time_us_64());
+                rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
 
-                // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and hopefully remove any clicks
-                // rx_audio_sample = audio_toolkit_lowpass_filter_i32(&speaker_lowpass_tracker, rx_audio_sample, speaker_lowpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove high frequency from speaker
+                rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, AUDIO_SAMPLE_RATE); // remove low end to block DC and hopefully remove any clicks
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //R
-                // ht15_i2s_codec_io_put_one_sample_raw_blocking((i32)0);
-                // ht15_i2s_codec_io_put_one_sample_raw_blocking((i32)0);
+                // ht15_i2s_codec_io_put_one_sample_raw_blocking(0);
+                // ht15_i2s_codec_io_put_one_sample_raw_blocking(4);
 
             }
 
