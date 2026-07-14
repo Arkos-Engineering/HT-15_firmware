@@ -698,7 +698,7 @@ static f32 calculate_volume(u8 volume){ return ((f32)volume * 0.619191f) - 61.0f
 
 static void audio_beep(u16 frequency_hz, u16 duration_ms, i8 volume_db){
 #if !defined(MOCK_RADIO)
-    // Sample rate is 48kHz based on our clock divider configuration
+    // Sample rate is 8kHz based on our clock divider configuration
     const u32 sample_rate = AUDIO_SAMPLE_RATE;
     
     // Frequency must be less than sample_rate/4 per datasheet
