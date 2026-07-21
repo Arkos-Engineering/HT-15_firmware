@@ -192,6 +192,10 @@ static void rf_init(){
         printf("Error initializing RF module!\n");
         return;
     } else{
+        rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
+        printf("symbol rate set to: %fsps\n", rfmodule_2m70cm_set_symbol_rate_sps(&rfmodule_state, AUDIO_SAMPLE_RATE));
+        printf("upsampler set to: %i\n", rfmodule_2m70cm_set_upsampler(&rfmodule_state, 64));
+        rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(25*KHZ));
         printf("RF module initialized successfully!\n");
     }
 }
@@ -790,8 +794,9 @@ void ht15_run_realtime_core(void){
             // TODO implement DMA with configurable block size/sample rate/oversampling - Ben 04/14/2026
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 // rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
-                 rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state);
+                 rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state)*33554432; // sample RF and convert from 7 to 32 bit
                  printf("recieved audio: %i\n", rx_audio_sample);
+                 printf("modulation: %i\n", rfmodule_state.current_modulation);
 
                 // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and hopefully remove any clicks
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L

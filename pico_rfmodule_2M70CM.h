@@ -16,7 +16,7 @@ typedef enum {
     STATE_SETTLING = 5,
     STATE_RXFIFO_OVERFLOW = 6,
     STATE_TXFIFO_UNDERFLOW = 7
-} cc1200_status_t;
+} cc1200_state_t;
 
 typedef enum {
     RFMODULE_ERROR_SUCCESS,
@@ -68,7 +68,7 @@ typedef struct {
 
 typedef struct {
     rfmodule_2m70cm_config_t config;
-    cc1200_status_t state_status_byte; //cached copy of state byte read from CC1200, updated by sending commands or load_status_byte()
+    cc1200_state_t state_status_byte; //cached copy of state byte read from CC1200, updated by sending commands or load_status_byte()
     bool8 chip_ready; //cached copy of ready bit from CC1200 Chip Status Byte. 0 if chip is ready, 1 if power and crystal are still stabalizing. update by sending commands or load_status_byte()
     bool8 is_keyed;
     rfmodule_modulation_t current_modulation;
@@ -540,6 +540,10 @@ rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *de
         mdmcfg2 &= 0b11111110;
         mdmcfg2 |= 0x01; // enter CMF mode
         rfmodule_2m70cm_write_register(dev, CC1200_REG_MDMCFG2, mdmcfg2);
+
+        u8 mdmcfg0 = 0b01100000;
+        rfmodule_2m70cm_write_register(dev, CC1200_REG_MDMCFG0, mdmcfg0);
+
         rfmodule_2m70cm_write_register(dev, CC1200_REG_CFM_TX_DATA_IN, 0); /* write data to be centered CW carrier */
         dev->current_modulation = modulation;
         return RFMODULE_ERROR_SUCCESS;
