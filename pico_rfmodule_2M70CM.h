@@ -323,6 +323,7 @@ float rfmodule_2m70cm_set_symbol_rate_sps(rfmodule_2m70cm_state_t *dev, float ra
 u8 rfmodule_2m70cm_set_upsampler(rfmodule_2m70cm_state_t *dev, u8 factor);
 bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz);
 u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz);
+i8 rfmodule_2m70cm_get_rx_data_raw(rfmodule_2m70cm_state_t *dev);
 rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data);
 rfmodule_error_code_t rfmodule_2m70cm_set_tx(rfmodule_2m70cm_state_t *dev, bool8 state);
 rfmodule_error_code_t rfmodule_2m70cm_set_rx(rfmodule_2m70cm_state_t *dev, bool8 state);
@@ -830,6 +831,13 @@ u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz){
 * sets tx transmit buffer for CFM data. 
 * data variable is twos compliment, -63 to +64
 */
+i8 rfmodule_2m70cm_get_rx_data_raw(rfmodule_2m70cm_state_t *dev){
+    if(dev->current_modulation == RFMODULE_MODULATION_FM){
+        return rfmodule_2m70cm_read_register(dev, CC1200_REG_CFM_RX_DATA_OUT); // curent offset
+    }
+
+}
+
 rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(rfmodule_2m70cm_state_t *dev, u8 data){
     if(dev->current_modulation == RFMODULE_MODULATION_FM){
         rfmodule_2m70cm_write_register(dev, CC1200_REG_CFM_TX_DATA_IN, data); /* random data */

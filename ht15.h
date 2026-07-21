@@ -211,7 +211,7 @@ static void rf_transmit(u64 frequency_hz, bool8 amp_enable, f32 dbm, bool8 state
 
     if(!state){
         printf("RF test: turning off carrier\n");
-        rfmodule_2m70cm_set_tx(&rfmodule_state, false);
+        rfmodule_2m70cm_set_rx(&rfmodule_state, true);
         rfmodule_2m70cm_set_power_mode(&rfmodule_state, RFMODULE_2M70CM_POWER_MODE_RX_ONLY);
         
         mutex_exit(&rfmodule_mutex);
@@ -789,7 +789,9 @@ void ht15_run_realtime_core(void){
         } else{ //rx
             // TODO implement DMA with configurable block size/sample rate/oversampling - Ben 04/14/2026
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
-                rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
+                // rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
+                 rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state);
+                 printf("recieved audio: %i\n", rx_audio_sample);
 
                 // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and hopefully remove any clicks
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
