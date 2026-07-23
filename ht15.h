@@ -119,7 +119,7 @@ u8 encoder_debounce_state = 0;
 u8 last_volume = 0;
 u8 current_volume = 0;
 
-u8 selected_channel = 1;
+u32 selected_channel_khz = 449000;
 
 tlv320dac3100_t audioamp;
 static f32 calculate_volume(u8 volume);
@@ -539,7 +539,7 @@ static void poll_input(){
     }
 
     /* process encoder */
-    selected_channel += encoder_get_difference();
+    selected_channel_khz += encoder_get_difference()*25;
 
     /* read volume pot */
     current_volume = get_volume_pot();
@@ -794,9 +794,9 @@ void ht15_run_realtime_core(void){
             // TODO implement DMA with configurable block size/sample rate/oversampling - Ben 04/14/2026
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 // rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
-                 rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state)*33554432; // sample RF and convert from 7 to 32 bit
-                 printf("recieved audio: %i\n", rx_audio_sample);
-                 printf("modulation: %i\n", rfmodule_state.current_modulation);
+                //  rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state)*33554432; // sample RF and convert from 7 to 32 bit
+                 rx_audio_sample = 0;
+                //  printf("modulation: %i\n", rfmodule_state.current_modulation);
 
                 // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and hopefully remove any clicks
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
@@ -864,38 +864,50 @@ HT15_EXPORT bool8 ht15_run(void){
         } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;
 
         if(!(cycle & 0b111111)){
-            // printf("trying to display settings\n");
 
-            //holdover from the old UI, New UI does not refresh the screen before trying to draw to it. Also added my voltage and volume back until we can integrate it to the new UI
-            if(should_clean_display){
-               ssd1681_wait_busy();
-               should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
-            }
-            char voltage_string[6];
+            u8 voltage_string[6];
             sprintf(voltage_string, "%.2fV", get_battery_voltage());
-            char channel_string[10];
-            snprintf(channel_string, 10, "CH %d", selected_channel);
 
+            u8 channel_string[16];
+            snprintf(channel_string, sizeof(channel_string), "%.3f", (float)selected_channel_khz / 1000.0f);
 
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 130, 10, voltage_string, 5, 1, SSD1681_FONT_8);
-            char volume_string[10];
-            u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
-            htui_area_info main_area_info = {
-                .type = htui_area_type_vertical,
-            };
+            u8 volume_string[3];
+            snprintf(volume_string, 3, "%02i", current_volume);
 
-            htui_begin_area(&ui_state, &main_area_info);
-                if(htui_button(&ui_state, &settings_button_id, "settings") == htui_component_state_pressed){
-                    in_settings = true;
-                }
-            htui_end(&ui_state);
-            if(!htui_end_and_render(&ui_state)){
-                printf("end and render failed.\n");
+            u8 *tx_string = rfmodule_state.is_keyed ? "TX  " : "  RX";
+
+            u8 ht15_string[6] = "HT-15";
+            u8 proto_string[19] = "Prototype Hardware";
+            u8 arkos_string[21] = "ArkosEngineering.com";
+
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 84, 10, tx_string, 4, 1, SSD1681_FONT_8);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 176, 10, volume_string, 2, 1, SSD1681_FONT_8);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 24, 48, ht15_string, 5, 1, SSD1681_FONT_32);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 28, 80, proto_string, 18, 1, SSD1681_FONT_8);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 44, 130, channel_string, 7, 1, SSD1681_FONT_16);
+            ssd1681_draw_string(SSD1681_COLOR_BLACK, 20, 190, arkos_string, 20, 1, SSD1681_FONT_8);
+
+            if(should_clean_display){
+                should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
+            } else {
+                ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
             }
+            // htui_area_info main_area_info = {
+            //     .type = htui_area_type_vertical,
+            // };
+
+            // htui_begin_area(&ui_state, &main_area_info);
+            //     if(htui_button(&ui_state, &settings_button_id, "settings") == htui_component_state_pressed){
+            //         in_settings = true;
+            //     }
+            // htui_end(&ui_state);
+            // if(!htui_end_and_render(&ui_state)){
+            //     printf("end and render failed.\n");
+            // }
         }
 
-        rf_transmit(439*MHZ, true, 25, key_states[key_ptt] == key_state_pressed);
+        rf_transmit(439*MHZ, false, 25, key_states[key_ptt] == key_state_pressed);
         gpio_put(pin_led_status, led_status_value);
         cycle += 1;
 
