@@ -119,7 +119,7 @@ u8 encoder_debounce_state = 0;
 u8 last_volume = 0;
 u8 current_volume = 0;
 
-u32 selected_channel_khz = 449000;
+u32 selected_channel_khz = 439000;
 
 tlv320dac3100_t audioamp;
 static f32 calculate_volume(u8 volume);
@@ -539,7 +539,7 @@ static void poll_input(){
     }
 
     /* process encoder */
-    selected_channel_khz += encoder_get_difference()*25;
+    // selected_channel_khz += encoder_get_difference()*25;
 
     /* read volume pot */
     current_volume = get_volume_pot();
@@ -733,6 +733,8 @@ u64 realtime_loop_rate_hz = AUDIO_SAMPLE_RATE;
 void ht15_run_realtime_core(void){
     u16 tone_hz = 1000;
     bool8 transmit_tone = false;
+    bool8 up_pressed = false;
+    bool8 down_pressed = false;
 
     // f32 mic_gain_multiplier = .0000001;
     u16 mic_highpass_cutoff_hz = 500;
@@ -762,6 +764,45 @@ void ht15_run_realtime_core(void){
 
     while(true){
 
+        //sample encoder and buttons every 1ms
+        if((realtime_cycle_count%(realtime_loop_rate_hz/1000)) == 0){
+            selected_channel_khz += encoder_get_difference()*25;
+
+            //up and down buttons
+            if (key_states[key_up] == key_state_pressed){
+                if(up_pressed){} else{
+                    selected_channel_khz += 1000;
+                    up_pressed = true;
+                }
+            } else{
+                up_pressed = false;
+            }
+            if (key_states[key_down] == key_state_pressed){
+                if(down_pressed){} else{
+                    selected_channel_khz -= 1000;
+                    down_pressed = true;
+                }
+            } else{
+                down_pressed = false;
+            }
+
+            // enforce HAM bands and roll between 2M and 70CM
+            if(selected_channel_khz > 220000){
+                if(selected_channel_khz>440000){
+                    selected_channel_khz -= 296000;
+                } else if(selected_channel_khz<420000){
+                    selected_channel_khz -= 272000;
+                }
+            } else {
+                if(selected_channel_khz>148000){
+                    selected_channel_khz += 272000;
+                } else if(selected_channel_khz<144000){
+                    selected_channel_khz += 296000;
+                }
+
+            }
+        }
+
         //tx
         if(rfmodule_state.is_keyed){
             // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32). This oversampling can cause a block if the PIO FIFO is not already full. TODO DMA will solve this - Ben 07/14/2026
@@ -773,10 +814,17 @@ void ht15_run_realtime_core(void){
             tx_audio_sample = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, tx_audio_sample, mic_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and to not interfere with the CTCSS tone
             tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, mic_gain_db); //apply mic gain
 
-            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -27.0f, -25.0f, 25.0f, .1f, .2f, realtime_loop_rate_hz); // autogain
-            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -30.0f, -12.0f, 0.0f, .001f, .05f, realtime_loop_rate_hz); // limiter targeting -30dBFS
+            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -40.0f, -40.0f, 20.0f, .1f, .2f, realtime_loop_rate_hz); // autogain
+            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -40.0f, -24.0f, 0.0f, .001f, .05f, realtime_loop_rate_hz); // limiter targeting -30dBFS
 
-            tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 24.0f); //gain to -6dBFS (after limiter targets -30dBFS)
+            if(tx_audio_sample > INT32_MAX/25){
+                tx_audio_sample = INT32_MAX/25;
+            }
+            if (tx_audio_sample < INT32_MIN/25){
+                tx_audio_sample = INT32_MIN/25;
+            }
+
+            tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 28.0f); //gain to -12dBFS (after limiter targets -40dBFS)
 
             //add tone to audio to transmit
             if(transmit_tone){
@@ -907,7 +955,7 @@ HT15_EXPORT bool8 ht15_run(void){
             // }
         }
 
-        rf_transmit(439*MHZ, false, 25, key_states[key_ptt] == key_state_pressed);
+        rf_transmit(selected_channel_khz*KHZ, true, 25, key_states[key_ptt] == key_state_pressed);
         gpio_put(pin_led_status, led_status_value);
         cycle += 1;
 
