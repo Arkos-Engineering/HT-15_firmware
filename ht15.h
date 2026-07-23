@@ -735,6 +735,7 @@ void ht15_run_realtime_core(void){
     bool8 transmit_tone = false;
     bool8 up_pressed = false;
     bool8 down_pressed = false;
+    u32 last_channel_khz = 0;
 
     // f32 mic_gain_multiplier = .0000001;
     u16 mic_highpass_cutoff_hz = 500;
@@ -766,41 +767,53 @@ void ht15_run_realtime_core(void){
 
         //sample encoder and buttons every 1ms
         if((realtime_cycle_count%(realtime_loop_rate_hz/1000)) == 0){
-            selected_channel_khz += encoder_get_difference()*25;
+            if(!rfmodule_state.is_keyed){
+                selected_channel_khz += encoder_get_difference()*25;
 
-            //up and down buttons
-            if (key_states[key_up] == key_state_pressed){
-                if(up_pressed){} else{
-                    selected_channel_khz += 1000;
-                    up_pressed = true;
+                //up and down buttons
+                if (key_states[key_up] == key_state_pressed){
+                    if(up_pressed){} else{
+                        selected_channel_khz += 1000;
+                        up_pressed = true;
+                    }
+                } else{
+                    up_pressed = false;
                 }
-            } else{
-                up_pressed = false;
-            }
-            if (key_states[key_down] == key_state_pressed){
-                if(down_pressed){} else{
-                    selected_channel_khz -= 1000;
-                    down_pressed = true;
-                }
-            } else{
-                down_pressed = false;
-            }
-
-            // enforce HAM bands and roll between 2M and 70CM
-            if(selected_channel_khz > 220000){
-                if(selected_channel_khz>440000){
-                    selected_channel_khz -= 296000;
-                } else if(selected_channel_khz<420000){
-                    selected_channel_khz -= 272000;
-                }
-            } else {
-                if(selected_channel_khz>148000){
-                    selected_channel_khz += 272000;
-                } else if(selected_channel_khz<144000){
-                    selected_channel_khz += 296000;
+                if (key_states[key_down] == key_state_pressed){
+                    if(down_pressed){} else{
+                        selected_channel_khz -= 1000;
+                        down_pressed = true;
+                    }
+                } else{
+                    down_pressed = false;
                 }
 
+                // enforce HAM bands and roll between 2M and 70CM
+                if(selected_channel_khz > 220000){
+                    if(selected_channel_khz>440000){
+                        selected_channel_khz -= 296000;
+                    } else if(selected_channel_khz<420000){
+                        selected_channel_khz -= 272000;
+                    }
+                } else {
+                    if(selected_channel_khz>148000){
+                        selected_channel_khz += 272000;
+                    } else if(selected_channel_khz<144000){
+                        selected_channel_khz += 296000;
+                    }
+
+                }
+                if(selected_channel_khz != last_channel_khz){
+                    mutex_enter_blocking(&rfmodule_mutex);
+                    // rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
+                    // rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(25*KHZ));
+                    rfmodule_2m70cm_set_frequency(&rfmodule_state, selected_channel_khz*KHZ);
+                    rfmodule_2m70cm_set_rx(&rfmodule_state, true);
+                    mutex_exit(&rfmodule_mutex);
+                    last_channel_khz = selected_channel_khz;
+                }
             }
+
         }
 
         //tx
@@ -842,8 +855,8 @@ void ht15_run_realtime_core(void){
             // TODO implement DMA with configurable block size/sample rate/oversampling - Ben 04/14/2026
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 // rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
-                //  rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state)*33554432; // sample RF and convert from 7 to 32 bit
-                 rx_audio_sample = 0;
+                 rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state)*33554432; // sample RF and convert from 7 to 32 bit
+                //  rx_audio_sample = 0;
                 //  printf("modulation: %i\n", rfmodule_state.current_modulation);
 
                 // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and hopefully remove any clicks
@@ -908,7 +921,7 @@ HT15_EXPORT bool8 ht15_run(void){
         /* if(any_key_held){ if((cycle & 0b1111) == 0b1111) led_status_value = !led_status_value; }
         else */ if(any_key_pressed && !key_states[key_ptt]){
             led_status_value = 0;
-            audio_beep(4000, 50, calculate_volume(current_volume));
+            audio_beep(4000, 50, calculate_volume(current_volume/2));
         } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;
 
         if(!(cycle & 0b111111)){
