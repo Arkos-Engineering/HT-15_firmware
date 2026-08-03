@@ -858,6 +858,7 @@ void ht15_run_realtime_core(void){
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 // rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
                  rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state)*33554432; // sample RF and convert from 7 to 32 bit
+                 printf("recieved audio: %i\n", rx_audio_sample);
                 //  rx_audio_sample = 0;
                 //  printf("modulation: %i\n", rfmodule_state.current_modulation);
 
