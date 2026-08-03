@@ -2,6 +2,8 @@
 #if !defined(HT15_H)
 #define HT15_H
 
+#define USE_DEBUG_UI 1
+
 #include "definitions.h"
 
 #if defined(__cplusplus)
@@ -119,7 +121,7 @@ u8 encoder_debounce_state = 0;
 u8 last_volume = 0;
 u8 current_volume = 0;
 
-u8 selected_channel = 1;
+u32 selected_channel_khz = 439000;
 
 tlv320dac3100_t audioamp;
 static f32 calculate_volume(u8 volume);
@@ -539,7 +541,7 @@ static void poll_input(){
     }
 
     /* process encoder */
-    selected_channel += encoder_get_difference();
+    // selected_channel_khz += encoder_get_difference()*25;
 
     /* read volume pot */
     current_volume = get_volume_pot();
@@ -733,6 +735,9 @@ u64 realtime_loop_rate_hz = AUDIO_SAMPLE_RATE;
 void ht15_run_realtime_core(void){
     u16 tone_hz = 1000;
     bool8 transmit_tone = false;
+    bool8 up_pressed = false;
+    bool8 down_pressed = false;
+    u32 last_channel_khz = 0;
 
     // f32 mic_gain_multiplier = .0000001;
     u16 mic_highpass_cutoff_hz = 500;
@@ -762,6 +767,57 @@ void ht15_run_realtime_core(void){
 
     while(true){
 
+        //sample encoder and buttons every 1ms
+        if((realtime_cycle_count%(realtime_loop_rate_hz/1000)) == 0){
+            if(!rfmodule_state.is_keyed){
+                selected_channel_khz += encoder_get_difference()*25;
+
+                //up and down buttons
+                if (key_states[key_up] == key_state_pressed){
+                    if(up_pressed){} else{
+                        selected_channel_khz += 1000;
+                        up_pressed = true;
+                    }
+                } else{
+                    up_pressed = false;
+                }
+                if (key_states[key_down] == key_state_pressed){
+                    if(down_pressed){} else{
+                        selected_channel_khz -= 1000;
+                        down_pressed = true;
+                    }
+                } else{
+                    down_pressed = false;
+                }
+
+                // enforce HAM bands and roll between 2M and 70CM
+                if(selected_channel_khz > 220000){
+                    if(selected_channel_khz>440000){
+                        selected_channel_khz -= 296000;
+                    } else if(selected_channel_khz<420000){
+                        selected_channel_khz -= 272000;
+                    }
+                } else {
+                    if(selected_channel_khz>148000){
+                        selected_channel_khz += 272000;
+                    } else if(selected_channel_khz<144000){
+                        selected_channel_khz += 296000;
+                    }
+
+                }
+                if(selected_channel_khz != last_channel_khz){
+                    mutex_enter_blocking(&rfmodule_mutex);
+                    // rfmodule_2m70cm_set_modulation(&rfmodule_state, RFMODULE_MODULATION_FM);
+                    // rfmodule_2m70cm_set_bw(&rfmodule_state, (u32)(25*KHZ));
+                    rfmodule_2m70cm_set_frequency(&rfmodule_state, selected_channel_khz*KHZ);
+                    rfmodule_2m70cm_set_rx(&rfmodule_state, true);
+                    mutex_exit(&rfmodule_mutex);
+                    last_channel_khz = selected_channel_khz;
+                }
+            }
+
+        }
+
         //tx
         if(rfmodule_state.is_keyed){
             // Oversample the mic and convert the 32 bit value to a 24 bit (hardware samples at 24 but packs into 32). This oversampling can cause a block if the PIO FIFO is not already full. TODO DMA will solve this - Ben 07/14/2026
@@ -773,10 +829,17 @@ void ht15_run_realtime_core(void){
             tx_audio_sample = audio_toolkit_highpass_filter_i32(&mic_highpass_tracker, tx_audio_sample, mic_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and to not interfere with the CTCSS tone
             tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, mic_gain_db); //apply mic gain
 
-            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -27.0f, -25.0f, 25.0f, .1f, .2f, realtime_loop_rate_hz); // autogain
-            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -30.0f, -12.0f, 0.0f, .001f, .05f, realtime_loop_rate_hz); // limiter targeting -30dBFS
+            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_slow, tx_audio_sample, -40.0f, -40.0f, 20.0f, .1f, .2f, realtime_loop_rate_hz); // autogain
+            tx_audio_sample = audio_toolkit_autogain_i32(&mic_autogain_tracker_fast, tx_audio_sample, -40.0f, -24.0f, 0.0f, .001f, .05f, realtime_loop_rate_hz); // limiter targeting -30dBFS
 
-            tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 24.0f); //gain to -6dBFS (after limiter targets -30dBFS)
+            if(tx_audio_sample > INT32_MAX/25){
+                tx_audio_sample = INT32_MAX/25;
+            }
+            if (tx_audio_sample < INT32_MIN/25){
+                tx_audio_sample = INT32_MIN/25;
+            }
+
+            tx_audio_sample = audio_toolkit_gain_i32(tx_audio_sample, 28.0f); //gain to -12dBFS (after limiter targets -40dBFS)
 
             //add tone to audio to transmit
             if(transmit_tone){
@@ -795,8 +858,8 @@ void ht15_run_realtime_core(void){
             for(i8 i=0; i<AUDIO_CODEC_OVERSAMPLING_RATIO; i++){
                 // rx_audio_sample = audio_toolkit_generate_tone_i32(1000, time_us_64());
                  rx_audio_sample = rfmodule_2m70cm_get_rx_data_raw(&rfmodule_state)*33554432; // sample RF and convert from 7 to 32 bit
-                 printf("recieved audio: %i\n", rx_audio_sample);
-                 printf("modulation: %i\n", rfmodule_state.current_modulation);
+                //  rx_audio_sample = 0;
+                //  printf("modulation: %i\n", rfmodule_state.current_modulation);
 
                 // rx_audio_sample = audio_toolkit_highpass_filter_i32(&speaker_highpass_tracker, rx_audio_sample, speaker_highpass_cutoff_hz, realtime_loop_rate_hz); // remove low end to block DC and hopefully remove any clicks
                 ht15_i2s_codec_io_put_one_sample_raw_blocking(rx_audio_sample); //L
@@ -860,42 +923,72 @@ HT15_EXPORT bool8 ht15_run(void){
         /* if(any_key_held){ if((cycle & 0b1111) == 0b1111) led_status_value = !led_status_value; }
         else */ if(any_key_pressed && !key_states[key_ptt]){
             led_status_value = 0;
-            audio_beep(4000, 50, calculate_volume(current_volume));
+            audio_beep(4000, 50, calculate_volume(current_volume/2));
         } else if((cycle & 0b111111) == 0b111111) led_status_value = !led_status_value;
 
         if(!(cycle & 0b111111)){
-            // printf("trying to display settings\n");
 
-            //holdover from the old UI, New UI does not refresh the screen before trying to draw to it. Also added my voltage and volume back until we can integrate it to the new UI
-            if(should_clean_display){
-               ssd1681_wait_busy();
-               should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
-            }
-            char voltage_string[6];
-            sprintf(voltage_string, "%.2fV", get_battery_voltage());
-            char channel_string[10];
-            snprintf(channel_string, 10, "CH %d", selected_channel);
+            if(USE_DEBUG_UI){
 
+                u8 voltage_string[6];
+                sprintf(voltage_string, "%.2fV", get_battery_voltage());
 
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 130, 10, voltage_string, 5, 1, SSD1681_FONT_8);
-            char volume_string[10];
-            u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
-            ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
-            htui_area_info main_area_info = {
-                .type = htui_area_type_vertical,
-            };
+                u8 channel_string[16];
+                snprintf(channel_string, sizeof(channel_string), "%.3f", (float)selected_channel_khz / 1000.0f);
 
-            htui_begin_area(&ui_state, &main_area_info);
-                if(htui_button(&ui_state, &settings_button_id, "settings") == htui_component_state_pressed){
-                    in_settings = true;
+                u8 volume_string[3];
+                snprintf(volume_string, 3, "%02i", current_volume);
+
+                u8 *tx_string = rfmodule_state.is_keyed ? "TX  " : "  RX";
+
+                u8 ht15_string[6] = "HT-15";
+                u8 proto_string[19] = "Prototype Hardware";
+                u8 arkos_string[21] = "ArkosEngineering.com";
+
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 10, 10, voltage_string, 5, 1, SSD1681_FONT_8);
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 84, 10, tx_string, 4, 1, SSD1681_FONT_8);
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 176, 10, volume_string, 2, 1, SSD1681_FONT_8);
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 24, 48, ht15_string, 5, 1, SSD1681_FONT_32);
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 28, 80, proto_string, 18, 1, SSD1681_FONT_8);
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 44, 130, channel_string, 7, 1, SSD1681_FONT_16);
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 20, 190, arkos_string, 20, 1, SSD1681_FONT_8);
+
+                if(should_clean_display){
+                    should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
+                } else {
+                    ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_PARTIAL);
                 }
-            htui_end(&ui_state);
-            if(!htui_end_and_render(&ui_state)){
-                printf("end and render failed.\n");
+            } else{
+                printf("trying to display settings\n");
+
+                //holdover from the old UI, New UI does not refresh the screen before trying to draw to it. Also added my voltage and volume back until we can integrate it to the new UI
+                if(should_clean_display){
+                ssd1681_wait_busy();
+                should_clean_display = ssd1681_write_buffer_and_update_if_ready(SSD1681_UPDATE_FAST_FULL)? 0 : 1;
+                }
+                char voltage_string[6];
+                sprintf(voltage_string, "%.2fV", get_battery_voltage());
+
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 130, 10, voltage_string, 5, 1, SSD1681_FONT_8);
+                char volume_string[10];
+                u16 written = snprintf(volume_string, 3, "%"PRIu8"<|", current_volume);
+                ssd1681_draw_string(SSD1681_COLOR_BLACK, 180, 10, volume_string, written, 1, SSD1681_FONT_8);
+                htui_area_info main_area_info = {
+                    .type = htui_area_type_vertical,
+                };
+
+                htui_begin_area(&ui_state, &main_area_info);
+                    if(htui_button(&ui_state, &settings_button_id, "settings") == htui_component_state_pressed){
+                        in_settings = true;
+                    }
+                htui_end(&ui_state);
+                if(!htui_end_and_render(&ui_state)){
+                    printf("end and render failed.\n");
+                }
             }
         }
 
-        rf_transmit(439*MHZ, true, 25, key_states[key_ptt] == key_state_pressed);
+        rf_transmit(selected_channel_khz*KHZ, true, 25, key_states[key_ptt] == key_state_pressed);
         gpio_put(pin_led_status, led_status_value);
         cycle += 1;
 
