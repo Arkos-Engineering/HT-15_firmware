@@ -51,8 +51,7 @@ read_last:
 .wrap
 
 % c-sdk {
-static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset,
-                                                uint base_pin, float clkdiv) {
+static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset, uint base_pin, float clkdiv) {
     pio_gpio_init(pio, base_pin + 0);  // BCLK
     pio_gpio_init(pio, base_pin + 1);  // DI
     pio_gpio_init(pio, base_pin + 2);  // LRCLK
@@ -74,7 +73,7 @@ static inline void ht15_i2s_mic_in_program_init(PIO pio, uint sm, uint offset,
     pio_sm_set_enabled(pio, sm, true);
 }
 
-static inline u32 ht15_i2s_mic_get_one_sample_raw_blocking(){
+static inline u32 ht15_i2s_mic_get_one_sample_raw_blocking(void){
     u32 sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);
     while(!sample){
         sample = pio_sm_get_blocking(I2S_MIC_PIO, I2S_MIC_SM);

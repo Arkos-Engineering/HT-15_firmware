@@ -2,6 +2,7 @@
 
 #define HT15_EXPORT static
 #define HT15_IMPLEMENTATION
+#define USE_DEBUG_UI
 #include "ht15.h"
 
 int main(){

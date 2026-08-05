@@ -38,6 +38,23 @@ rfmodule_error_code_t rfmodule_2m70cm_set_tx_data_raw(UNUSED rfmodule_2m70cm_sta
     return RFMODULE_ERROR_SUCCESS;
 }
 
+u8 rfmodule_2m70cm_write_cmd(rfmodule_2m70cm_state_t *dev, rfmodule_2m70cm_cmd_strobe_t addr){return 0;}
+u8 rfmodule_2m70cm_write_register(rfmodule_2m70cm_state_t *dev, u16 addr, u8 value){return 0;}
+u8 rfmodule_2m70cm_read_register(rfmodule_2m70cm_state_t *dev, u16 addr){return 0;}
+i8 rfmodule_2m70cm_init(rfmodule_2m70cm_state_t *dev){return 0;}
+i8 rfmodule_2m70cm_hw_reset(rfmodule_2m70cm_state_t *dev){return 0;}
+i8 rfmodule_2m70cm_set_power_mode(rfmodule_2m70cm_state_t *dev, rfmodule_power_mode_t mode){return 0;}
+rfmodule_error_code_t rfmodule_2m70cm_set_modulation(rfmodule_2m70cm_state_t *dev, rfmodule_modulation_t modulation){return 0;}
+float rfmodule_2m70cm_set_symbol_rate_sps(rfmodule_2m70cm_state_t *dev, float rate_sps){return 0;}
+u8 rfmodule_2m70cm_set_upsampler(rfmodule_2m70cm_state_t *dev, u8 factor){return 0;}
+bool8 rfmodule_2m70cm_set_frequency(rfmodule_2m70cm_state_t *dev, u32 frequency_hz){return 0;}
+u32 rfmodule_2m70cm_set_bw(rfmodule_2m70cm_state_t *dev, u32 bandwidth_hz){return 0;}
+i8 rfmodule_2m70cm_get_rx_data_raw(rfmodule_2m70cm_state_t *dev){return 0;}
+rfmodule_error_code_t rfmodule_2m70cm_set_tx(rfmodule_2m70cm_state_t *dev, bool8 state){return 0;}
+rfmodule_error_code_t rfmodule_2m70cm_set_rx(rfmodule_2m70cm_state_t *dev, bool8 state){return 0;}
+f32 cc1200_set_output_level(rfmodule_2m70cm_state_t *dev, f32 dbm){return 0;}
+f32 rfmodule_2m70cm_set_output_dbm(rfmodule_2m70cm_state_t *dev, f32 dbm){return 0;}
+
 rfmodule_2m70cm_state_t rfmodule_state = {0};
 mutex_t rfmodule_mutex;
 
@@ -227,6 +244,24 @@ HTUI_EXTERNAL_EXPORT bool8 htui_external_draw(htui_display_draw_command * comman
 
     return 1;
 }
+
+static inline u32 ht15_i2s_mic_get_one_sample_raw_blocking(void){
+    return 0;
+}
+static inline void ht15_i2s_codec_io_put_one_sample_raw_blocking(i32 data){
+}
+u32 selected_channel_khz = 439000;
+static i8 encoder_get_difference(){ return 0; }
+void mutex_enter_blocking(mutex_t *mtx){}
+
+static inline i32 audio_toolkit_generate_tone_i32(u16 tone_hz, u64 current_time_us){return 1;}
+static inline i32 audio_toolkit_highpass_filter_i32(f32 *tracker, i32 input_sample, u16 cutoff_frequency, u16 sample_rate){return 1;}
+static inline i32 audio_toolkit_lowpass_filter_i32(f32 *tracker, i32 input_sample, u16 cutoff_frequency, u16 sample_rate){return 1;}
+static inline i32 audio_toolkit_oversample_i32(i32 *samples, u16 sample_count){return 1;}
+static inline i32 audio_toolkit_gain_i32(i32 input_sample, f32 gain_db){return 1;}
+static inline i32 audio_toolkit_autogain_i32(f32 *tracker, i32 input_sample, f32 target_dbfs, f32 min_gain_db, f32 max_gain_db, f32 attack_tau_s, f32 release_tau_s, u16 sample_rate){ return 1; }
+static inline f32 audio_toolkit_db_to_linear(f32 db){return 1;}
+static inline f32 audio_toolkit_linear_to_db(f32 linear){return 1;}
 
 c_str const font = "internal_font";
 fat_str fonts[] = {

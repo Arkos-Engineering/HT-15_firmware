@@ -9,6 +9,7 @@ static inline i32 audio_toolkit_highpass_filter_i32(f32 *tracker, i32 input_samp
 static inline i32 audio_toolkit_lowpass_filter_i32(f32 *tracker, i32 input_sample, u16 cutoff_frequency, u16 sample_rate);
 static inline i32 audio_toolkit_oversample_i32(i32 *samples, u16 sample_count);
 static inline i32 audio_toolkit_gain_i32(i32 input_sample, f32 gain_db);
+static inline i32 audio_toolkit_autogain_i32(f32 *tracker, i32 input_sample, f32 target_dbfs, f32 min_gain_db, f32 max_gain_db, f32 attack_tau_s, f32 release_tau_s, u16 sample_rate);
 static inline f32 audio_toolkit_db_to_linear(f32 db);
 static inline f32 audio_toolkit_linear_to_db(f32 linear);
     
@@ -136,14 +137,7 @@ static inline f32 audio_toolkit_linear_to_db(f32 linear){
  * @param sample_rate    Sample rate in Hz.
  * @return               Gained output sample, i32, same scale as input.
  */
-static inline i32 audio_toolkit_autogain_i32(f32 *tracker,
-                                             i32 input_sample,
-                                             f32 target_dbfs,
-                                             f32 min_gain_db,
-                                             f32 max_gain_db,
-                                             f32 attack_tau_s,
-                                             f32 release_tau_s,
-                                             u16 sample_rate) {
+static inline i32 audio_toolkit_autogain_i32(f32 *tracker, i32 input_sample, f32 target_dbfs, f32 min_gain_db, f32 max_gain_db, f32 attack_tau_s, f32 release_tau_s, u16 sample_rate) {
     f32 x   = (f32)input_sample;
     f32 mag = fabsf(x)/(float)INT32_MAX;
 

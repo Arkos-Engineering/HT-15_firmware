@@ -937,10 +937,7 @@ int ssd1681_read_point(ssd1681_color_t color, uint8_t x, uint8_t y, uint8_t *dat
     return 0;
 }
 
-int ssd1681_draw_string(ssd1681_color_t color, uint8_t x, uint8_t y,
-                        const char *str, uint16_t len, uint8_t data,
-                        uint8_t font_size)
-{
+int ssd1681_draw_string(ssd1681_color_t color, uint8_t x, uint8_t y, const char *str, uint16_t len, uint8_t data, uint8_t font_size) {
     if (!g_ssd1681.initialized) return -1;
     if (!str) return -2;
 

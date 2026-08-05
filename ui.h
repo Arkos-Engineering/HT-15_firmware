@@ -129,6 +129,13 @@ typedef enum PACKED{
         htui_command_type_end_area,
 } htui_command_type;
 
+typedef struct {
+        union {
+                struct {u8 x, y; } c;
+                u8 a[2];
+        };
+} vec2u8;
+
 /*TODO: this can become a generic that we figure out the structure based on the first enum bytes. */
 typedef struct {
         htui_command_type type;
@@ -137,12 +144,13 @@ typedef struct {
         u16 component_id;
         htui_size size;
         u8 handle_size;
-        union{
+        union {
                 bool8 is_pressable;
                 u8 distance_from_left;
                 u8 distance_from_top;
                 u8 speed;
                 bool8 flex;
+                vec2u8 xy;
         };
         bool8 horizontal_lines;
         bool8 bold;
@@ -187,7 +195,7 @@ typedef struct{
         u16 selected_component_id;
         bool8 is_pressed;
 
-        htui_command  previous_commands[MAX_DRAW_COMMANDS];
+        htui_command previous_commands[MAX_DRAW_COMMANDS];
         u32 previous_commands_size;
 
         htui_command commands[MAX_DRAW_COMMANDS];
@@ -206,6 +214,8 @@ _HTUI_EXPORT bool8 htui_add_component(htui_state * state, u32 * component_id, ht
 /* returns true if pressed */
 _HTUI_EXPORT htui_component_state htui_button(htui_state * state, u32 * component_id, c_str title);
 
+_HTUI_EXPORT htui_component_state htui_text(htui_state * state, u32 * component_id, u8 x, u8 y, u8 size, c_str format, ...);
+
 _HTUI_EXPORT bool8 htui_begin_area(htui_state * state, htui_area_info * info);
 /** ends operation for component or area*/
 _HTUI_EXPORT bool8 htui_end(htui_state * state);
@@ -216,6 +226,7 @@ _HTUI_EXPORT bool8 htui_end(htui_state * state);
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
 
 /*TODO: have this sized based on some external macros also have it be a bitset*/
 u8 buffer[(200*200)/8] = {0};
@@ -328,6 +339,27 @@ _HTUI_EXPORT bool8 htui_begin_area(htui_state * state, htui_area_info * info){
         if(!_htui_push_back_command(state, &command)) return false;
 
         return true;
+}
+
+_HTUI_EXPORT htui_component_state htui_text(htui_state * state, u32 * component_id, u8 x, u8 y, u8 size, c_str format, ...){
+        if(!_htui_try_get_next_component_id(state, component_id)) return htui_component_state_error;
+        va_list args;
+        va_start(args, format);
+        int printed_size = vsnprintf(buffer, buffer_size, format, args);
+        va_end(args);
+
+        htui_command text_command = {
+                .type = htui_command_type_text,
+                .text = buffer,
+                .text_size = printed_size,
+                .component_id = component_id,
+                .size = size,
+                .handle_size = 0,
+                .xy = (vec2u8){.c.x = x, .c.y = y},
+        };
+
+        if(!_htui_push_back_command(state, &text_command)) return htui_component_state_error;
+        return htui_component_state_success;
 }
 
 _HTUI_EXPORT htui_component_state htui_button(htui_state * state, u32 * component_id, c_str title){
