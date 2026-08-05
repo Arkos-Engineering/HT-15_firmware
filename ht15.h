@@ -583,6 +583,8 @@ HTUI_EXTERNAL_EXPORT bool8 htui_external_draw(htui_display_draw_command * comman
     return true;
 }
 
+#endif /*!defined(MOCK_RADIO)*/
+
 HTUI_EXTERNAL_EXPORT bool8 htui_external_list_fonts(fat_str ** out_fonts, u32 * out_fonts_size, void * user_state){
     static fat_str internal_font = {
         .size = array_size("internal_font"),
@@ -595,24 +597,22 @@ HTUI_EXTERNAL_EXPORT bool8 htui_external_list_fonts(fat_str ** out_fonts, u32 * 
 }
 
 HTUI_EXTERNAL_EXPORT bool8 htui_external_list_code_points(fat_str const font, u8 ** out_code_points, u32 * out_code_points_size, void * user_state){
-    if(memcmp(font.data, "internal_font", font.size)) return 0;
+    if(memcmp(font.data, "internal_font", font.size)) return false;
 
     *out_code_points = glyph_code_points;
-    *out_code_points_size = 26;
+    *out_code_points_size = 83;
     return 1;
 }
 
 HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_point_index, htui_glyph const ** out_glyph, void * user_state){
-    if(memcmp(font.data, "internal_font", font.size)) return 0;
+    if(memcmp(font.data, "internal_font", font.size)) return false;
 
-    if(code_point_index > 'z' || code_point_index < 'a') return 0;
+    if(code_point_index > 'z' || code_point_index < '!') return false;
 
-    *out_glyph = glyphs + (code_point_index-'a');
+    *out_glyph = glyphs + (code_point_index-'!');
 
     return 1;
 }
-
-#endif /*!defined(MOCK_RADIO)*/
 
 HT15_EXPORT bool8 ht15_initalize(void){
 
@@ -903,6 +903,7 @@ HT15_EXPORT bool8 ht15_run(void){
     htui_state ui_state;
     u32 settings_button_id = 0;
     u32 info_id = 0;
+    u32 info_id2 = 0;
     bool8 in_settings = false;
     printf("Initalize\n");
     htui_initalize(200, 200, &ui_state, NULL);
@@ -967,10 +968,10 @@ HT15_EXPORT bool8 ht15_run(void){
             };
 
             htui_begin_area(&ui_state, &main_area_info);
-                if(htui_button(&ui_state, &settings_button_id, "settings") == htui_component_state_pressed){
+                if(htui_button(&ui_state, &settings_button_id, "Settings") == htui_component_state_pressed){
                     in_settings = true;
                 }
-                htui_text(&ui_state, &info_id, 10, 20, htui_size_small, "%.2fV", get_battery_voltage());
+                htui_text(&ui_state, &info_id, 0, 20, htui_size_small, "%.2fV", get_battery_voltage());
             htui_end(&ui_state);
             if(!htui_end_and_render(&ui_state)){
                 printf("end and render failed.\n");

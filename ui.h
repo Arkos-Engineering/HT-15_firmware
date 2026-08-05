@@ -129,12 +129,7 @@ typedef enum PACKED{
         htui_command_type_end_area,
 } htui_command_type;
 
-typedef struct {
-        union {
-                struct {u8 x, y; } c;
-                u8 a[2];
-        };
-} vec2u8;
+typedef struct { u8 x, y; } vec2u8;
 
 /*TODO: this can become a generic that we figure out the structure based on the first enum bytes. */
 typedef struct {
@@ -183,6 +178,7 @@ typedef struct{
         htui_screen_state screen_state;
         u16 width,height;
         void * internal_buffer;
+        u32 buffer_usage;
         void * user_state;
         /*TODO as of Mar 11 2025: hold onto previous state for each component to tell if it needs to be re-rendered for its section of the screen. @Zea Lynn*/
 
@@ -227,6 +223,7 @@ _HTUI_EXPORT bool8 htui_end(htui_state * state);
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <inttypes.h>
 
 /*TODO: have this sized based on some external macros also have it be a bitset*/
 u8 buffer[(200*200)/8] = {0};
@@ -242,6 +239,35 @@ _HTUI_EXPORT void htui_initalize(u8 width, u8 height, htui_state * state, void *
 _HTUI_EXPORT bool8 htui_begin(htui_state * state){
         state->commands_size = 0;
         return true;
+}
+
+static void _htui_draw_glyph(htui_state * state, fat_str const * fonts, u32 fonts_size, u8 x, u8 y, htui_size size, u32 code_point, vec2u8 * out_offset){
+        /*TODO: check code point exists in current font map. htui_external_list_code_points*/
+        htui_display_draw_command command;
+        htui_glyph const * glyph;
+        bool8 found_font_for_glyph = 0;
+
+        ifor(f, fonts_size){
+                found_font_for_glyph = htui_external_get_glyph(fonts[f], code_point, &glyph, state->user_state);
+                if(found_font_for_glyph) break;
+        }
+        /*TODO: log error and crash and core dump*/
+        if(!found_font_for_glyph || !glyph){
+                printf("no font found for glyph \'%c\'%"PRIu32".\n", (u8)code_point, code_point);
+                /*TODO: render a box when not test ui and we cant find a code_points glyph*/
+                return;
+        } 
+
+        command.x = x;
+        command.y = y;
+        command.mode = htui_draw_command_mode_finished;
+        command.width = glyph->width;
+        command.height = glyph->height;
+        command.buffer = glyph->data;
+        htui_external_draw(&command, state->user_state);
+
+        out_offset->x = x + glyph->width;
+        out_offset->y = y + glyph->height;
 }
 
 _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
@@ -270,41 +296,26 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
         ifor(i, state->commands_size){
                 /* TODO: render a border and show when button is hovered.*/
                 if(state->commands[i].type == htui_command_type_button){
-                        u8 y_offset = 0, x_offset = 0;
                         c_str text = state->commands[i].text;
+                        vec2u8 offset = {0};
                         ifor(t, state->commands[i].text_size){
-                                /*TODO: check code point exists in current font map. htui_external_list_code_points*/
-                                htui_glyph const * glyph;
-                                bool8 found_font_for_glyph = 0;
-
-                                ifor(f, fonts_size){
-                                        found_font_for_glyph = htui_external_get_glyph(fonts[f], text[t], &glyph, state->user_state);
-                                        if(found_font_for_glyph) break;
-                                }
-                                /*TODO: log error and crash and core dump*/
-                                if(!found_font_for_glyph || !glyph){
-                                        printf("no font found for glyph.\n");
-                                        return 0;
-                                } 
-
-                                command.x = x_offset;
-                                command.y = y_offset;
-                                command.mode = htui_draw_command_mode_finished;
-                                command.width = glyph->width;
-                                command.height = glyph->height;
-                                command.buffer = glyph->data;
-                                htui_external_draw(&command, state->user_state);
-                                x_offset += glyph->width;
+                                _htui_draw_glyph(state, fonts, fonts_size, state->commands[i].xy.x + offset.x, state->commands[i].xy.y, state->commands[i].size, (u32)text[t], &offset);
                         }
-
-                        if(x_offset > state->width) command.width = state->width;
-                        else command.width = x_offset;
+                        if(offset.x > state->width) command.width = state->width;
+                        else command.width = offset.x;
+                } else if(state->commands[i].type == htui_command_type_text) {
+                        c_str text = state->commands[i].text;
+                        vec2u8 offset = {0};
+                        ifor(t, state->commands[i].text_size){
+                                _htui_draw_glyph(state, fonts, fonts_size, state->commands[i].xy.x + offset.x, state->commands[i].xy.y, state->commands[i].size, (u32)text[t], &offset);
+                        }
                 }
         }
 
         /* TODO pointer to double buffer swap.*/
         state->previous_commands_size = state->commands_size;
         state->commands_size = 0;
+        state->buffer_usage = 0;
 
         command.mode = htui_draw_command_mode_finished;
         if(!htui_external_draw(&command, state->user_state)){ return 0; }
@@ -345,17 +356,17 @@ _HTUI_EXPORT htui_component_state htui_text(htui_state * state, u32 * component_
         if(!_htui_try_get_next_component_id(state, component_id)) return htui_component_state_error;
         va_list args;
         va_start(args, format);
-        int printed_size = vsnprintf(buffer, buffer_size, format, args);
+        int printed_size = vsnprintf(buffer + state->buffer_usage, buffer_size - state->buffer_usage, format, args);
         va_end(args);
 
         htui_command text_command = {
                 .type = htui_command_type_text,
                 .text = buffer,
                 .text_size = printed_size,
-                .component_id = component_id,
+                .component_id = *component_id,
                 .size = size,
                 .handle_size = 0,
-                .xy = (vec2u8){.c.x = x, .c.y = y},
+                .xy = (vec2u8){.x = x, .y = y},
         };
 
         if(!_htui_push_back_command(state, &text_command)) return htui_component_state_error;

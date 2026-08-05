@@ -263,46 +263,46 @@ static inline i32 audio_toolkit_autogain_i32(f32 *tracker, i32 input_sample, f32
 static inline f32 audio_toolkit_db_to_linear(f32 db){return 1;}
 static inline f32 audio_toolkit_linear_to_db(f32 linear){return 1;}
 
-c_str const font = "internal_font";
-fat_str fonts[] = {
-    {.size = sizeof(font)-1, .data = font}, 
-};
-u8 * code_points = "abcdefghijklmnopqrstuvwxyz";
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-
-
-HTUI_EXTERNAL_EXPORT bool8 htui_external_list_fonts(fat_str ** out_fonts, u32 * out_fonts_size, UNUSED void * user_state){
-    *out_fonts = fonts;
-    *out_fonts_size = 1;
-    return true;
-}
-
-HTUI_EXTERNAL_EXPORT bool8 htui_external_list_code_points(fat_str const font, u8 ** out_code_points, u32 * out_code_points_size, void * UNUSED user_state){
-    if(memcmp(font.data, fonts[0].data, fonts[0].size) == 0){
-        *out_code_points = code_points;
-        *out_code_points_size = 26;
-    }else abort();
-    return true;
-}
-
-HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_point, htui_glyph const ** out_glyph, void * user_state){
-    __attribute__((unused)) display_state * state = user_state;
-
-    if(!font.data || font.size == 0) return false;
-
-    if(memcmp(font.data, fonts[0].data, fonts[0].size) == 0){
-        u32 code_point_index = (code_point -'a');
-
-        if(code_point_index > 25) return false;
-
-        *out_glyph = glyphs + code_point_index;
-        
-    }else return false;
-
-    return true;
-}
+//c_str const font = "internal_font";
+//fat_str fonts[] = {
+//    {.size = sizeof(font)-1, .data = font}, 
+//};
+//u8 * code_points = "abcdefghijklmnopqrstuvwxyz";
+//
+//#define STB_IMAGE_IMPLEMENTATION
+//#include "stb_image.h"
+//
+//
+//HTUI_EXTERNAL_EXPORT bool8 htui_external_list_fonts(fat_str ** out_fonts, u32 * out_fonts_size, UNUSED void * user_state){
+//    *out_fonts = fonts;
+//    *out_fonts_size = 1;
+//    return true;
+//}
+//
+//HTUI_EXTERNAL_EXPORT bool8 htui_external_list_code_points(fat_str const font, u8 ** out_code_points, u32 * out_code_points_size, void * UNUSED user_state){
+//    if(memcmp(font.data, fonts[0].data, fonts[0].size) == 0){
+//        *out_code_points = code_points;
+//        *out_code_points_size = 26;
+//    }else abort();
+//    return true;
+//}
+//
+//HTUI_EXTERNAL_EXPORT bool8 htui_external_get_glyph(fat_str const font, u32 code_point, htui_glyph const ** out_glyph, void * user_state){
+//    __attribute__((unused)) display_state * state = user_state;
+//
+//    if(!font.data || font.size == 0) return false;
+//
+//    if(memcmp(font.data, fonts[0].data, fonts[0].size) == 0){
+//        u32 code_point_index = (code_point -'a');
+//
+//        if(code_point_index > 25) return false;
+//
+//        *out_glyph = glyphs + code_point_index;
+//        
+//    }else return false;
+//
+//    return true;
+//}
 
 static void poll_input(void){
     SDL_PollEvent(&mock_display_state.event);
