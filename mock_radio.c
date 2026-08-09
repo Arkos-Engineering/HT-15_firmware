@@ -55,7 +55,7 @@ rfmodule_error_code_t rfmodule_2m70cm_set_rx(rfmodule_2m70cm_state_t *dev, bool8
 f32 cc1200_set_output_level(rfmodule_2m70cm_state_t *dev, f32 dbm){return 0;}
 f32 rfmodule_2m70cm_set_output_dbm(rfmodule_2m70cm_state_t *dev, f32 dbm){return 0;}
 
-rfmodule_2m70cm_state_t rfmodule_state = {0};
+static rfmodule_2m70cm_state_t rfmodule_state = {0};
 mutex_t rfmodule_mutex;
 
 bool mutex_try_enter(UNUSED mutex_t *mtx, UNUSED u32 *owner_out){
@@ -304,7 +304,7 @@ static inline f32 audio_toolkit_linear_to_db(f32 linear){return 1;}
 //    return true;
 //}
 
-static void poll_input(void){
+static void _ht_poll_input(ht_state * ht){
     SDL_PollEvent(&mock_display_state.event);
     if(mock_display_state.event.type == SDL_EVENT_QUIT){
         exit(EXIT_SUCCESS);

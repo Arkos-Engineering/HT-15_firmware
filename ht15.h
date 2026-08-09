@@ -492,7 +492,7 @@ static void audio_codec_init(){
 
 }
 
-static void poll_input(){
+static inline void _ht_poll_input(ht_state * state){
     u32 columns = array_size(button_power_pin);
     u32 rows = array_size(button_sense_pin);
     ifor(c, columns){
@@ -759,7 +759,7 @@ void ht15_run_realtime_core(void){
     u64 realtime_cycle_count = 0;
     u64 loop_time_target_us = 1000000/realtime_loop_rate_hz;
     u16 slowest_loop_time_us = 0;
-    float rolling_average_loop_time_us = 0.0f;
+    f32 rolling_average_loop_time_us = 0.0f;
     u64 current_time_us = time_us_64();
     u64 loop_target_end_us = current_time_us + loop_time_target_us;
 
@@ -886,11 +886,55 @@ void ht15_run_realtime_core(void){
 
 }
 
+HT15_EXPORT bool8 ht_push_screen(ht_state * ht, PFN_display_screen screen, void * state){
+    if(screen == NULL) return false;
+
+    if(ht->screen_depth == 0){
+        ht->screens[ht->screen_depth] = screen;
+        ht->screen_states[ht->screen_depth] = state;
+    }else{
+        if(ht->current_screen+2 > UINT8_MAX) return false;
+        ht->screen_depth = ht->current_screen+1;
+        ht->screens[ht->screen_depth] = screen;
+        ht->screen_states[ht->screen_depth] = state;
+        ht->current_screen += 1;
+    }
+
+    ht->screen_depth += 1;
+    return true;
+}
+
+HT15_EXPORT void ht_go_forwards_a_screen(ht_state * ht){
+    if(ht->current_screen == 0) return;
+    ht->current_screen -=1;
+}
+
+HT15_EXPORT void ht_go_backwards_a_screen(ht_state * ht){
+    if(ht->current_screen+1 == ht->screen_depth) return;
+    ht->current_screen +=1;
+}
+
+static inline void _ht_call_current_screen(ht_state * blargle){ blargle->screens[blargle->current_screen](blargle, blargle->screen_states[blargle->current_screen]); }
+
+/*TODO: make sure this can be a callback on the pico like this*/
+static void _ht_render_home(ht_state * ht, void * home_state){
+    /* TODO: display 2 channels here, have the channels render themselves and pass forth and back state like key pressed or enter or whatever so that we can push a screen if needed
+     * Channels can be loaded from configured device state, they will load whatever module they are dependent on first.
+     * Channels is just a working name until I can figure out what this thing actually is.
+     * This could display anythiing from a FM, AM, DMR, M17 channel, to groups, to a DOG COLLOR module with the ability to change levels through the input, or some other programmed application that you want to activate by pressing tx or other keys on the home screen.
+     */
+}
+
 HT15_EXPORT bool8 ht15_run(void){
+
+    /*TODO: we probably want this in initalize so that we can put radio metadata that can passed down to side loaded modules*/
+    ht_state ht = {0};
+
     u32 cycle = 0;
     bool8 should_clean_display = 1;
 
-    poll_input(); // make sure curent_volume is set before launching the realtime core
+    _ht_poll_input(&ht); // make sure curent_volume is set before launching the realtime core
+                         
     mutex_init(&rfmodule_mutex);
     multicore_launch_core1(ht15_run_realtime_core);
 
@@ -908,9 +952,13 @@ HT15_EXPORT bool8 ht15_run(void){
     printf("Initalize\n");
     htui_initalize(200, 200, &ui_state, NULL);
 
-    while(1){
-        poll_input();
+    /* In the future the homescreen can be set through the config.*/
+    ht_push_screen(&ht, &_ht_render_home, NULL);
 
+    while(1){
+        _ht_poll_input(&ht);
+
+        /* TODO: we need to pass key state down through external modules.*/
         bool8 any_key_pressed = 0;
         bool8 any_key_held = 0;
         ifor(key, key_max_enum){
@@ -962,17 +1010,18 @@ HT15_EXPORT bool8 ht15_run(void){
 #endif
             // printf("trying to display settings\n");
 
-            //holdover from the old UI, New UI does not refresh the screen before trying to draw to it. Also added my voltage and volume back until we can integrate it to the new UI
-            htui_area_info main_area_info = {
-                .type = htui_area_type_vertical,
-            };
+            htui_area_info main_area_info = { .type = htui_area_type_vertical, };
 
-            htui_begin_area(&ui_state, &main_area_info);
-                if(htui_button(&ui_state, &settings_button_id, "Settings") == htui_component_state_pressed){
-                    in_settings = true;
-                }
-                htui_text(&ui_state, &info_id, 0, 20, htui_size_small, "%.2fV", get_battery_voltage());
+            /* Information Bar Area */ htui_begin_area(&ui_state, &main_area_info);
+                htui_text(&ui_state, &info_id, 140, 10, htui_size_small, "%.2fV", get_battery_voltage());
+                htui_text(&ui_state, &info_id, 100, 10, htui_size_small, "%02i", current_volume);
+                htui_text(&ui_state, &info_id, 70, 10, htui_size_small, rfmodule_state.is_keyed ? "RX" : "TX");
             htui_end(&ui_state);
+
+            htui_area_info screen_area_info = { .type = htui_area_type_horizontal, };
+
+            _ht_call_current_screen(&ht);
+
             if(!htui_end_and_render(&ui_state)){
                 printf("end and render failed.\n");
             }

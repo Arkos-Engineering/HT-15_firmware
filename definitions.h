@@ -189,4 +189,20 @@ typedef enum {
     spi1_device_flash,
 } spi1_device;
 
+
+typedef struct ht_state ht_state;
+typedef void (*PFN_display_screen)(ht_state * state, void * user_state);
+
+/* TODO: all of our ui and other state needs to go here so we can pass it to code that is loaded on startup and runtime. */
+typedef struct ht_state{
+    u8 version;
+
+    /*screen state*/
+    u8 current_screen;
+    u8 screen_depth;
+    void * screen_states[UINT8_MAX];
+    PFN_display_screen screens[UINT8_MAX];
+
+} ht_state;
+
 #endif /*HT15_DEFINITIONS*/

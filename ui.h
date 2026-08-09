@@ -81,6 +81,7 @@ typedef enum{
         htui_screen_state_clean,
 } htui_screen_state;
 
+/* we assume normal size here is 24x24 12x24 for halfwidth(regular charactes) and each size 1.5 times larger*/
 typedef enum {
         htui_size_tiny,
         htui_size_small,
@@ -224,6 +225,9 @@ _HTUI_EXPORT bool8 htui_end(htui_state * state);
 #include <stdio.h>
 #include <stdarg.h>
 #include <inttypes.h>
+#include <stdlib.h>
+#define HT15_UTIL_IMPLEMENTATION
+#include "util.h"
 
 /*TODO: have this sized based on some external macros also have it be a bitset*/
 u8 buffer[(200*200)/8] = {0};
@@ -241,11 +245,29 @@ _HTUI_EXPORT bool8 htui_begin(htui_state * state){
         return true;
 }
 
-static void _htui_draw_glyph(htui_state * state, fat_str const * fonts, u32 fonts_size, u8 x, u8 y, htui_size size, u32 code_point, vec2u8 * out_offset){
+static inline u32 _htui_scale_value(u32 value, htui_size size){
+        if(size == htui_size_tiny){
+                value = value * 2 / 3;
+                value = value * 2 / 3;
+        } else if(size == htui_size_small){
+                value = value * 2 / 3;
+        } else if(size == htui_size_big){
+                value = value * 3 / 2;
+        } else if(size == htui_size_giant){
+                value = value * 3 / 2;
+                value = value * 3 / 2;
+        }
+        return value;
+}
+
+static void _htui_draw_glyph(htui_state * state, fat_str const * fonts, u32 fonts_size, u8 x, u8 y, htui_size size, u32 code_point, vec2u8 * out_glyph_extent){
         /*TODO: check code point exists in current font map. htui_external_list_code_points*/
         htui_display_draw_command command;
         htui_glyph const * glyph;
         bool8 found_font_for_glyph = 0;
+        u32 glyph_width = 0;
+        u32 glyph_height = 0;
+        u8 * workspace_buffer = NULL;
 
         ifor(f, fonts_size){
                 found_font_for_glyph = htui_external_get_glyph(fonts[f], code_point, &glyph, state->user_state);
@@ -258,16 +280,62 @@ static void _htui_draw_glyph(htui_state * state, fat_str const * fonts, u32 font
                 return;
         } 
 
+        glyph_width = glyph->width;
+        glyph_height = glyph->height;
+        
+        command.mode = htui_draw_command_mode_finished;
         command.x = x;
         command.y = y;
-        command.mode = htui_draw_command_mode_finished;
-        command.width = glyph->width;
-        command.height = glyph->height;
         command.buffer = glyph->data;
-        htui_external_draw(&command, state->user_state);
+        command.width = glyph_width;
+        command.height = glyph_height;
 
-        out_offset->x = x + glyph->width;
-        out_offset->y = y + glyph->height;
+        /* TODO: when we have a lookup map, cache glyphs that are scaled so we don't need to keep calculating it.*/
+        if(size == htui_size_normal) /*no op*/;
+        else{
+                if(size == htui_size_tiny){
+                        glyph_width = glyph_width * 2 / 3;
+                        glyph_width = glyph_width * 2 / 3;
+
+                        glyph_height = glyph_height * 2 / 3;  
+                        glyph_height = glyph_height * 2 / 3;  
+                } else if(size == htui_size_small){
+                        glyph_width = glyph_width * 2 / 3;
+
+                        glyph_height = glyph_height * 2 / 3;  
+                } else if(size == htui_size_big){
+                        glyph_width = glyph_width * 3 / 2;
+
+                        glyph_height = glyph_height * 3 / 2;  
+                } else if(size == htui_size_giant){
+                        glyph_width = glyph_width * 3 / 2;
+                        glyph_width = glyph_width * 3 / 2;
+
+                        glyph_height = glyph_height * 3 / 2;  
+                        glyph_height = glyph_height * 3 / 2;  
+                }
+
+                /* scale */
+
+                /*TODO: custom allocators. */
+                workspace_buffer = malloc((glyph_width * glyph_height+7)/8);
+                ifor(gx, glyph->width){
+                        ifor(gy, glyph->height){
+                                u32 sx = _htui_scale_value(gx, size), xy = _htui_scale_value(gy, size);
+                                set_bit_at_index(workspace_buffer, glyph_width * xy + sx, test_bit_at_index(glyph->data, glyph->width * gy + gx));
+                        }
+                }
+                command.buffer = workspace_buffer;
+                command.width = glyph_width;
+                command.height = glyph_height;
+        }
+
+        htui_external_draw(&command, state->user_state);
+        if(workspace_buffer) free(workspace_buffer);
+
+        /*TODO: make this use actuall kerning for nicer text*/
+        out_glyph_extent->x = glyph_width;
+        out_glyph_extent->y = glyph_height;
 }
 
 _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
@@ -296,18 +364,13 @@ _HTUI_EXPORT bool8 htui_end_and_render(htui_state * state){
         ifor(i, state->commands_size){
                 /* TODO: render a border and show when button is hovered.*/
                 if(state->commands[i].type == htui_command_type_button){
-                        c_str text = state->commands[i].text;
-                        vec2u8 offset = {0};
-                        ifor(t, state->commands[i].text_size){
-                                _htui_draw_glyph(state, fonts, fonts_size, state->commands[i].xy.x + offset.x, state->commands[i].xy.y, state->commands[i].size, (u32)text[t], &offset);
-                        }
-                        if(offset.x > state->width) command.width = state->width;
-                        else command.width = offset.x;
                 } else if(state->commands[i].type == htui_command_type_text) {
                         c_str text = state->commands[i].text;
                         vec2u8 offset = {0};
                         ifor(t, state->commands[i].text_size){
-                                _htui_draw_glyph(state, fonts, fonts_size, state->commands[i].xy.x + offset.x, state->commands[i].xy.y, state->commands[i].size, (u32)text[t], &offset);
+                                vec2u8 glyph_extent = {0};
+                                _htui_draw_glyph(state, fonts, fonts_size, state->commands[i].xy.x + offset.x, state->commands[i].xy.y, state->commands[i].size, (u32)text[t], &glyph_extent);
+                                offset.x += glyph_extent.x;
                         }
                 }
         }
@@ -361,7 +424,7 @@ _HTUI_EXPORT htui_component_state htui_text(htui_state * state, u32 * component_
 
         htui_command text_command = {
                 .type = htui_command_type_text,
-                .text = buffer,
+                .text = buffer + state->buffer_usage,
                 .text_size = printed_size,
                 .component_id = *component_id,
                 .size = size,
@@ -370,27 +433,10 @@ _HTUI_EXPORT htui_component_state htui_text(htui_state * state, u32 * component_
         };
 
         if(!_htui_push_back_command(state, &text_command)) return htui_component_state_error;
-        return htui_component_state_success;
-}
 
-_HTUI_EXPORT htui_component_state htui_button(htui_state * state, u32 * component_id, c_str title){
-        if(!_htui_try_get_next_component_id(state, component_id)) return false;
+        /* TODO: custom allocators.*/
+        state->buffer_usage += printed_size + 1;
 
-        htui_command button_command = {
-                .type = htui_command_type_button,
-                .text = title,
-                .text_size = strlen(title),
-                .component_id = *component_id,
-                .size = htui_size_normal,
-                .is_pressable = true,
-        };
-
-        if(!_htui_push_back_command(state, &button_command)) return htui_component_state_error;
-        if(state->selected_component_id == *component_id){
-                if(state->is_pressed) return htui_component_state_pressed;
-                else return htui_component_state_hovered;
-        }
-        
         return htui_component_state_success;
 }
 
