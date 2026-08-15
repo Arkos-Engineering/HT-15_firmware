@@ -908,8 +908,8 @@ f32 rfmodule_2m70cm_set_output_dbm(rfmodule_2m70cm_state_t *dev, f32 dbm){
     f32 corrected_dbm = dbm;
 
     //constrain dbm
-    if(corrected_dbm > 30){ //realistically this should be 36ish, however i am limiting it because I blew an amp the other day
-        corrected_dbm = 30;
+    if(corrected_dbm > 36){ //realistically this should be 36ish, however i am limiting it because I blew an amp the other day
+        corrected_dbm = 36;
     } else if(corrected_dbm < 25){
         corrected_dbm = 25;
     }

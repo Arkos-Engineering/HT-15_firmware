@@ -988,7 +988,8 @@ HT15_EXPORT bool8 ht15_run(void){
             }
         }
 
-        rf_transmit(selected_channel_khz*KHZ, true, 25, key_states[key_ptt] == key_state_pressed);
+        // rf_transmit(selected_channel_khz*KHZ, true, 25, key_states[key_ptt] == key_state_pressed);
+        rf_transmit(selected_channel_khz*KHZ, true, 30, key_states[key_ptt] == key_state_pressed);
         gpio_put(pin_led_status, led_status_value);
         cycle += 1;
 
